@@ -19,7 +19,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.postgres.session import Base
 from database.postgres.models.employee import Employee
-from database.postgres.models.travel_settlement import TravelSettlement
 from database.postgres.models.enums import (
     TravelCategory,
     TravelMode,
@@ -110,7 +109,7 @@ class TravelRequest(Base):
     )
 
     employee: Mapped[Employee] = relationship(back_populates="travel_requests")
-    travel_settlement: Mapped[Optional[TravelSettlement]] = relationship(
+    settlement: Mapped[Optional["TravelSettlement"]] = relationship(
         back_populates="travel_request",
         uselist=False,
     )

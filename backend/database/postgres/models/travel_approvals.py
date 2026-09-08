@@ -70,7 +70,9 @@ class TravelRequestApproval(_ApprovalMixin, Base):
     )
 
     travel_request: Mapped["TravelRequest"] = relationship(back_populates="approvals")
-    approver: Mapped[Optional[Employee]] = relationship(foreign_keys=[approver_id])
+    approver: Mapped[Optional[Employee]] = relationship(
+        foreign_keys="TravelRequestApproval.approver_id",
+    )
 
 
 class TravelSettlementApproval(_ApprovalMixin, Base):
@@ -91,4 +93,6 @@ class TravelSettlementApproval(_ApprovalMixin, Base):
     )
 
     settlement: Mapped["TravelSettlement"] = relationship(back_populates="approvals")
-    approver: Mapped[Optional[Employee]] = relationship(foreign_keys=[approver_id])
+    approver: Mapped[Optional[Employee]] = relationship(
+        foreign_keys="TravelSettlementApproval.approver_id",
+    )

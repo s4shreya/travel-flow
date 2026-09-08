@@ -5,7 +5,6 @@ from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.postgres.session import Base
-from database.postgres.models.travel_request import TravelRequest
 from database.postgres.models.enums import EmployeeRole, str_enum
 
 
@@ -43,6 +42,6 @@ class Employee(Base):
     )
 
     # Defines the relationship between the Employee and TravelRequest models
-    travel_requests: Mapped[list[TravelRequest]] = relationship(
+    travel_requests: Mapped[list["TravelRequest"]] = relationship(
         back_populates="employee",
     )
