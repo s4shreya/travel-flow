@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Identity, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.postgres.session import Base
 from database.postgres.models.travel_request import TravelRequest
-from database.postgres.models.enums import EmployeeRole
+from database.postgres.models.enums import EmployeeRole, str_enum
 
 
 class Employee(Base):
@@ -26,12 +26,7 @@ class Employee(Base):
         nullable=True,
     )
     role: Mapped[EmployeeRole] = mapped_column(
-        Enum(
-            EmployeeRole,
-            name="employee_role",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-            native_enum=False,
-        ),
+        str_enum(EmployeeRole, "employee_role"),
         nullable=False,
     )
 

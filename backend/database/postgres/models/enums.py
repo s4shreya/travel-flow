@@ -1,5 +1,16 @@
 from enum import StrEnum
 
+from sqlalchemy import Enum
+
+
+def str_enum(enum_cls: type[StrEnum], name: str) -> Enum:
+    return Enum(
+        enum_cls,
+        name=name,
+        values_callable=lambda cls: [member.value for member in cls],
+        native_enum=False,
+    )
+
 
 class EmployeeRole(StrEnum):
     EMPLOYEE = "Employee"
@@ -30,3 +41,45 @@ class TravelMode(StrEnum):
     RAIL = "Rail"
     ROAD = "Road"
     OTHER = "Other"
+
+
+# Roles allowed on an approval step
+APPROVER_ROLES = frozenset(
+    {
+        EmployeeRole.REPORTING_MANAGER,
+        EmployeeRole.HEAD_OF_DEPARTMENT,
+        EmployeeRole.HEAD_OF_DIVISION,
+        EmployeeRole.FINANCE,
+        EmployeeRole.MD,
+    }
+)
+
+
+class ApprovalDecision(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    RETURNED = "returned"
+    REJECTED = "rejected"
+    SKIPPED = "skipped"
+
+
+class SettlementStatus(StrEnum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    RETURNED = "returned"
+    IN_APPROVAL = "in_approval"
+    FINANCE_REVIEW = "finance_review"
+    QUEUED_FOR_PAYMENT = "queued_for_payment"
+    PAID = "paid"
+    RECOVERABLE = "recoverable"
+
+
+class ExpenseSection(StrEnum):
+    LODGING = "lodging"
+    TRANSPORT = "transport"
+    OTHER = "other"
+
+
+class PaidBy(StrEnum):
+    EMPLOYEE = "Employee"
+    COMPANY = "Company"

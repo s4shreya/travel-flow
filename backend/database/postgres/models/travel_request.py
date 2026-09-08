@@ -1,12 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
-    Enum,
     ForeignKey,
     Identity,
     Numeric,
@@ -20,10 +19,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.postgres.session import Base
 from database.postgres.models.employee import Employee
+from database.postgres.models.travel_settlement import TravelSettlement
 from database.postgres.models.enums import (
     TravelCategory,
     TravelMode,
     TravelRequestStatus,
+    str_enum,
 )
 
 
@@ -46,23 +47,13 @@ class TravelRequest(Base):
     destination: Mapped[str] = mapped_column(String(255), nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     travel_category: Mapped[TravelCategory] = mapped_column(
-        Enum(
-            TravelCategory,
-            name="travel_category",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-            native_enum=False,
-        ),
+        str_enum(TravelCategory, "travel_category"),
         nullable=False,
         default=TravelCategory.DOMESTIC_TIER_1,
         server_default=TravelCategory.DOMESTIC_TIER_1.value,
     )
     travel_mode: Mapped[TravelMode] = mapped_column(
-        Enum(
-            TravelMode,
-            name="travel_mode",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-            native_enum=False,
-        ),
+        str_enum(TravelMode, "travel_mode"),
         nullable=False,
         default=TravelMode.FLIGHT,
         server_default=TravelMode.FLIGHT.value,
@@ -100,12 +91,7 @@ class TravelRequest(Base):
     )
 
     status: Mapped[TravelRequestStatus] = mapped_column(
-        Enum(
-            TravelRequestStatus,
-            name="travel_request_status",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-            native_enum=False,
-        ),
+        str_enum(TravelRequestStatus, "travel_request_status"),
         nullable=False,
         default=TravelRequestStatus.DRAFT,
         server_default=TravelRequestStatus.DRAFT.value,
@@ -124,3 +110,12 @@ class TravelRequest(Base):
     )
 
     employee: Mapped[Employee] = relationship(back_populates="travel_requests")
+    travel_settlement: Mapped[Optional[TravelSettlement]] = relationship(
+        back_populates="travel_request",
+        uselist=False,
+    )
+    approvals: Mapped[list["TravelRequestApproval"]] = relationship(
+        back_populates="travel_request",
+        cascade="all, delete-orphan",
+        order_by="TravelRequestApproval.level",
+    )
