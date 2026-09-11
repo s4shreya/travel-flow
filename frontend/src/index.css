@@ -1,11 +1,70 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  font-family: "Roboto", sans-serif;
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", "Segoe UI", sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
 }
 
-body {
-  background-color: #ffffff;
-  color: #001821;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: var(--font-sans);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    color: #0f172a;
+    background: #f7faf9;
+  }
+}
+
+@utility font-display {
+  font-family: var(--font-display);
+}
+
+@utility animate-in {
+  animation: fade-rise 420ms ease-out;
+}
+
+@utility animate-fade {
+  animation: fade-in 200ms ease-out;
+}
+
+@utility animate-drawer-in {
+  animation: drawer-in 280ms ease-out;
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: 0.96;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }

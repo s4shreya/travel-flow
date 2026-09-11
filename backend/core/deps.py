@@ -1,10 +1,11 @@
 """Shared FastAPI dependencies."""
 
-from typing import Annotated
+from typing import Annotated, Callable
 
 from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
+from core.capabilities import Capability, has_capability
 from core.exceptions import AppException
 from database.postgres.crud.employee import EmployeeCRUD
 from database.postgres.models.employee import Employee
@@ -30,3 +31,20 @@ def get_current_employee(
             message=f"Unknown employee code: {x_employee_code}",
         )
     return employee
+
+
+def require_capability(capability: Capability) -> Callable[..., Employee]:
+    """Dependency factory: current employee must have the given capability."""
+
+    def _check(
+        employee: Annotated[Employee, Depends(get_current_employee)],
+    ) -> Employee:
+        if not has_capability(employee.role, capability):
+            raise AppException(
+                status_code=403,
+                sub_status_code="forbidden",
+                message=f"Missing capability: {capability.value}",
+            )
+        return employee
+
+    return _check

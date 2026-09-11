@@ -95,3 +95,24 @@ class TravelRequestRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     approvals: list[ApprovalStepRead] = Field(default_factory=list)
+
+
+class TravelRequestListItem(BaseModel):
+    """Compact row for the track / finance queues."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    travel_request_id: str
+    destination: str
+    start_date: date
+    end_date: date
+    status: TravelRequestStatus
+    estimated_cost: Decimal
+    advance_requested: Decimal
+    advance_disbursed: Decimal
+    created_at: datetime
+
+
+class AdvanceReleaseRequest(BaseModel):
+    amount: Decimal = Field(..., gt=0)
+    reference: str = Field(..., min_length=1, max_length=64)

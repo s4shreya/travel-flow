@@ -1,5 +1,3 @@
-from typing import Any
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,13 +10,17 @@ class EmployeeCRUD:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def get_by(self, field: str, value: Any) -> Employee | None:
+    def get_by(self, field: str, value) -> Employee | None:
         # Look up a single employee by any mapped column (e.g. id, employee_code)
         column = getattr(Employee, field, None)
         if column is None:
             raise ValueError(f"Invalid employee field: {field}")
         stmt = select(Employee).where(column == value)
         return self.db.execute(stmt).scalar_one_or_none()
+
+    def list_all(self) -> list[Employee]:
+        stmt = select(Employee).order_by(Employee.id)
+        return list(self.db.execute(stmt).scalars().all())
 
     def get_management_chain(self, employee: Employee) -> list[Employee]:
         """Walk reporting_manager_id upward (immediate manager → … → MD)."""

@@ -10,12 +10,12 @@ from database.postgres.models.enums import ApprovalDecision, TravelRequestStatus
 from database.postgres.models.travel_approvals import TravelRequestApproval
 from database.postgres.models.travel_request import TravelRequest
 from src.travel_requests.approval_matrix import build_request_approval_plan
-from src.travel_requests.schemas import TravelRequestCreate
+from src.travel_requests.schemas import AdvanceReleaseRequest, TravelRequestCreate
 from core.config import logger
 
 
 class TravelRequestService:
-    """Orchestrates create / submit rules for travel requests."""
+    """Orchestrates travel-request lifecycle rules."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -88,6 +88,56 @@ class TravelRequestService:
             f"status={loaded.status.value}"
         )
         return loaded
+
+    def list_mine(self, employee: Employee) -> list[TravelRequest]:
+        return self.travel_requests.list_for_employee(employee.id)
+
+    def get_for_viewer(
+        self, employee: Employee, travel_request_id: str
+    ) -> TravelRequest:
+        row = self.travel_requests.get_by_business_id(travel_request_id)
+        if row is None:
+            raise AppException(
+                status_code=404,
+                sub_status_code="travel_request_not_found",
+                message=f"Travel request not found: {travel_request_id}",
+            )
+        return row
+
+    def list_awaiting_advance(self) -> list[TravelRequest]:
+        return self.travel_requests.list_awaiting_advance()
+
+    def release_advance(
+        self,
+        travel_request_id: str,
+        payload: AdvanceReleaseRequest,
+    ) -> TravelRequest:
+        row = self.travel_requests.get_by_business_id(travel_request_id)
+        if row is None:
+            raise AppException(
+                status_code=404,
+                sub_status_code="travel_request_not_found",
+                message=f"Travel request not found: {travel_request_id}",
+            )
+        if row.status != TravelRequestStatus.APPROVED:
+            raise AppException(
+                status_code=422,
+                sub_status_code="advance_not_allowed",
+                message="Advance can only be released for approved requests",
+            )
+        remaining = row.advance_requested - row.advance_disbursed
+        if payload.amount > remaining:
+            raise AppException(
+                status_code=422,
+                sub_status_code="advance_exceeds_remaining",
+                message=f"Amount exceeds remaining advance ({remaining})",
+            )
+        row.advance_disbursed = row.advance_disbursed + payload.amount
+        logger.info(
+            f"Advance {payload.amount} released on {row.travel_request_id} "
+            f"ref={payload.reference.strip()}"
+        )
+        return self.travel_requests.save(row)
 
     def _attach_approvals(
         self,
