@@ -9,8 +9,11 @@ export const TRAVEL_CATEGORIES = [
 
 export const TRAVEL_MODES = ["Flight", "Rail", "Road", "Other"] as const;
 
+export const BORNE_BY_OPTIONS = ["Company", "Employee"] as const;
+
 export type TravelCategory = (typeof TRAVEL_CATEGORIES)[number];
 export type TravelMode = (typeof TRAVEL_MODES)[number];
+export type BorneBy = (typeof BORNE_BY_OPTIONS)[number];
 
 export type TravelRequestStatus =
   | "draft"
@@ -28,8 +31,9 @@ export type ApprovalDecision =
 
 export interface EstimatedHead {
   head: string;
+  basis: string;
   amount: string;
-  notes?: string | null;
+  borne_by: BorneBy;
 }
 
 export interface TravelRequestCreatePayload {

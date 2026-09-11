@@ -6,21 +6,34 @@ import type {
 } from "react";
 
 const controlClass =
-  "w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-slate-50";
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-teal-700/50 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-slate-50";
 
 interface FieldProps {
   id: string;
   label: string;
   hint?: string;
   error?: string;
+  required?: boolean;
   children: ReactNode;
 }
 
-export function Field({ id, label, hint, error, children }: FieldProps) {
+export function Field({
+  id,
+  label,
+  hint,
+  error,
+  required = false,
+  children,
+}: FieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium text-slate-800">
         {label}
+        {required ? (
+          <span className="ml-0.5 text-red-700" aria-hidden>
+            *
+          </span>
+        ) : null}
       </label>
       {children}
       {hint && !error ? <p className="text-xs text-slate-500">{hint}</p> : null}

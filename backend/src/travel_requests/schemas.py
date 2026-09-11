@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -17,8 +17,17 @@ class EstimatedHead(BaseModel):
     """One cost head on the travel request estimate (lodging, meals, …)."""
 
     head: str = Field(..., min_length=1, max_length=128)
+    basis: str = Field(..., min_length=1, max_length=255)
     amount: Decimal = Field(..., ge=0)
-    notes: str | None = None
+    borne_by: Literal["Company", "Employee"] = "Company"
+
+    @field_validator("head", "basis")
+    @classmethod
+    def strip_head_fields(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be blank")
+        return cleaned
 
 
 class TravelRequestCreate(BaseModel):
@@ -51,7 +60,7 @@ class TravelRequestCreate(BaseModel):
         # Trip window must be coherent
         if self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
-        # Policy §1.2 — advance ≤ 60% of estimated employee-borne cost
+        # Advance ≤ 60% of total estimated cost
         max_advance = (self.estimated_cost * Decimal("0.60")).quantize(Decimal("0.01"))
         if self.advance_requested > max_advance:
             raise ValueError(
