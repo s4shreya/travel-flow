@@ -1,4 +1,4 @@
-import type { Capability } from "@/lib/capabilities";
+import type { Capability } from "@/types/auth";
 
 export interface DashboardAction {
   id: string;

@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 
-import { DEMO_EMPLOYEES, type DemoEmployee } from "@/data/demoEmployees";
+import type { EmployeeSummary } from "@/types/me";
 
 interface PersonaSwitcherProps {
-  employee: DemoEmployee;
+  employee: EmployeeSummary;
+  employees: EmployeeSummary[];
   onSelect: (employeeCode: string) => void;
 }
 
@@ -16,12 +17,15 @@ function initials(name: string): string {
     .join("");
 }
 
-export function PersonaSwitcher({ employee, onSelect }: PersonaSwitcherProps) {
+export function PersonaSwitcher({
+  employee,
+  employees,
+  onSelect,
+}: PersonaSwitcherProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
-  // Close when clicking outside the control
   useEffect(() => {
     if (!open) return;
 
@@ -69,9 +73,7 @@ export function PersonaSwitcher({ employee, onSelect }: PersonaSwitcherProps) {
         </span>
         <span
           aria-hidden
-          className={`ml-1 text-slate-400 transition ${
-            open ? "rotate-180" : ""
-          }`}
+          className={`ml-1 text-slate-400 transition ${open ? "rotate-180" : ""}`}
         >
           ▾
         </span>
@@ -94,16 +96,16 @@ export function PersonaSwitcher({ employee, onSelect }: PersonaSwitcherProps) {
           </div>
 
           <ul className="max-h-80 overflow-y-auto py-1">
-            {DEMO_EMPLOYEES.map((person) => {
-              const selected = person.employeeCode === employee.employeeCode;
+            {employees.map((person) => {
+              const selected = person.employee_code === employee.employee_code;
               return (
-                <li key={person.employeeCode} role="none">
+                <li key={person.employee_code} role="none">
                   <button
                     type="button"
                     role="option"
                     aria-selected={selected}
                     onClick={() => {
-                      onSelect(person.employeeCode);
+                      onSelect(person.employee_code);
                       setOpen(false);
                     }}
                     className={[
@@ -137,7 +139,7 @@ export function PersonaSwitcher({ employee, onSelect }: PersonaSwitcherProps) {
                         {person.role} · {person.department}
                       </span>
                       <span className="mt-0.5 block truncate text-[11px] text-slate-400">
-                        {person.employeeCode}
+                        {person.employee_code}
                       </span>
                     </span>
                   </button>
