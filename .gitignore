@@ -42,7 +42,8 @@ env
 
 # Env files
 .env
-.env.example
+!.env.example
+!backend/.env.example
 
 # Uploaded receipts
 backend/uploads/
