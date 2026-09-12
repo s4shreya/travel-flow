@@ -46,7 +46,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "https://amusing-joy-production-3fbb.up.railway.app",
+        "https://travel-flow-production.up.railway.app",
     ],  # Allow requests from given origin
     allow_credentials=True,  # Allow cookies and authentication headers in cross-origin requests
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
