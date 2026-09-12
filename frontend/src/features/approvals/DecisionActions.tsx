@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 import { decideApproval } from "@/api/approvals";
-import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Field, TextArea } from "@/components/ui/Field";
 
