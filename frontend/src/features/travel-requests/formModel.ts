@@ -42,6 +42,36 @@ export function createInitialFormValues(): TravelRequestFormValues {
   };
 }
 
+/** Prefill the form from an existing travel request (edit draft). */
+export function valuesFromTravelRequest(
+  request: import("@/types/travelRequest").TravelRequest,
+): TravelRequestFormValues {
+  const heads =
+    request.estimated_heads.length > 0
+      ? request.estimated_heads.map((row) => ({
+          head: row.head ?? "",
+          basis: row.basis ?? "",
+          amount: String(row.amount ?? ""),
+          borne_by: (row.borne_by === "Employee" ? "Employee" : "Company") as
+            | "Company"
+            | "Employee",
+        }))
+      : [{ head: "", basis: "", amount: "", borne_by: "Company" as const }];
+
+  return {
+    start_date: request.start_date,
+    end_date: request.end_date,
+    destination: request.destination,
+    purpose: request.purpose,
+    travel_category: request.travel_category,
+    travel_mode: request.travel_mode,
+    currency: request.currency,
+    estimated_heads: heads,
+    estimated_cost: String(request.estimated_cost),
+    advance_requested: String(request.advance_requested),
+  };
+}
+
 export function sumEstimatedHeads(heads: EstimatedHead[]): number {
   return heads.reduce((total, row) => {
     const amount = parseMoney(row.amount);

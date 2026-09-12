@@ -26,21 +26,44 @@ export async function apiFetch<T>(
   path: string,
   { body, employeeCode, headers, ...init }: RequestOptions,
 ): Promise<T> {
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
       "X-Employee-Code": employeeCode,
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(body !== undefined && !isFormData
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body:
+      body === undefined
+        ? undefined
+        : isFormData
+          ? (body as FormData)
+          : JSON.stringify(body),
   });
 
   if (!response.ok) {
     let errorBody: ApiErrorBody = { message: response.statusText };
     try {
-      errorBody = (await response.json()) as ApiErrorBody;
+      const raw = (await response.json()) as Record<string, unknown>;
+      // AppException shape
+      if (typeof raw.message === "string") {
+        errorBody = raw as ApiErrorBody;
+      } else if (Array.isArray(raw.detail)) {
+        // FastAPI / Pydantic validation errors
+        const first = raw.detail[0] as { msg?: string } | undefined;
+        errorBody = {
+          message: first?.msg ?? "Validation failed",
+          sub_status_code: "validation_error",
+        };
+      } else if (typeof raw.detail === "string") {
+        errorBody = { message: raw.detail, sub_status_code: "error" };
+      }
     } catch {
       // Keep statusText when the body is not JSON
     }

@@ -14,6 +14,11 @@ export interface TravelRequestListItem {
   advance_requested: string;
   advance_disbursed: string;
   created_at: string;
+  progress_label?: string | null;
+  pending_with?: string | null;
+  settlement_status?: string | null;
+  settlement_amount_payable?: string | null;
+  settlement_amount_recoverable?: string | null;
 }
 
 /** POST /api/travel-requests */
@@ -44,6 +49,18 @@ export function getTravelRequest(
   return apiFetch<TravelRequest>(`/api/travel-requests/${travelRequestId}`, {
     method: "GET",
     employeeCode,
+  });
+}
+
+export function updateTravelRequest(
+  employeeCode: string,
+  travelRequestId: string,
+  payload: TravelRequestCreatePayload
+): Promise<TravelRequest> {
+  return apiFetch<TravelRequest>(`/api/travel-requests/${travelRequestId}`, {
+    method: "PUT",
+    employeeCode,
+    body: payload,
   });
 }
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { createTravelRequest } from "@/api/travelRequests";
+import { createTravelRequest, updateTravelRequest } from "@/api/travelRequests";
 import { ApiError } from "@/api/client";
 import { useEmployee } from "@/context/EmployeeContext";
 import type { TravelRequest } from "@/types/travelRequest";
@@ -21,7 +21,9 @@ interface UseCreateTravelRequestResult {
   reset: () => void;
 }
 
-export function useCreateTravelRequest(): UseCreateTravelRequestResult {
+export function useCreateTravelRequest(
+  editId?: string,
+): UseCreateTravelRequestResult {
   const { employeeCode } = useEmployee();
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -40,7 +42,9 @@ export function useCreateTravelRequest(): UseCreateTravelRequestResult {
     setSubmitting(true);
     try {
       const payload = toCreatePayload(values, asSubmit);
-      const result = await createTravelRequest(employeeCode, payload);
+      const result = editId
+        ? await updateTravelRequest(employeeCode, editId, payload)
+        : await createTravelRequest(employeeCode, payload);
       setCreated(result);
     } catch (error) {
       if (error instanceof ApiError) {
@@ -48,7 +52,7 @@ export function useCreateTravelRequest(): UseCreateTravelRequestResult {
       } else if (error instanceof Error) {
         setApiError(error.message);
       } else {
-        setApiError("Something went wrong while creating the request");
+        setApiError("Something went wrong while saving the request");
       }
     } finally {
       setSubmitting(false);

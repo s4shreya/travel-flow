@@ -73,31 +73,51 @@ export function TrackTravelRequestsPage() {
       ) : null}
 
       <ul className="flex flex-col gap-3">
-        {rows.map((row) => (
-          <li
-            key={row.travel_request_id}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-slate-900">
-                  {row.travel_request_id}
+        {rows.map((row) => {
+          const progress =
+            row.progress_label || formatRequestStatus(row.status);
+          const payable = Number(row.settlement_amount_payable || 0);
+          const recoverable = Number(row.settlement_amount_recoverable || 0);
+
+          return (
+            <li key={row.travel_request_id}>
+              <Link
+                to={`/travel-requests/${row.travel_request_id}`}
+                className="block rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-teal-700/40"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      {row.travel_request_id}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {row.destination} · {row.start_date} → {row.end_date}
+                    </p>
+                  </div>
+                  <span className="max-w-[16rem] rounded-full bg-teal-50 px-2.5 py-1 text-right text-xs font-medium text-teal-900">
+                    {progress}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Estimate ₹{formatAmountValue(row.estimated_cost)} · Advance ₹
+                  {formatAmountValue(row.advance_disbursed)}/
+                  {formatAmountValue(row.advance_requested)}
+                  {payable > 0
+                    ? ` · Payable ₹${formatAmountValue(payable)}`
+                    : null}
+                  {recoverable > 0
+                    ? ` · Recoverable ₹${formatAmountValue(recoverable)}`
+                    : null}
                 </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  {row.destination} · {row.start_date} → {row.end_date}
-                </p>
-              </div>
-              <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-900">
-                {formatRequestStatus(row.status)}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Estimate ₹{formatAmountValue(row.estimated_cost)} · Advance ₹
-              {formatAmountValue(row.advance_disbursed)}/
-              {formatAmountValue(row.advance_requested)}
-            </p>
-          </li>
-        ))}
+                {row.pending_with ? (
+                  <p className="mt-1 text-xs font-medium text-amber-800">
+                    Pending with {row.pending_with}
+                  </p>
+                ) : null}
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

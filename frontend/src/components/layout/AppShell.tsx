@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { NotificationsDrawer } from "@/components/layout/NotificationsDrawer";
@@ -14,7 +14,13 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const { employee, employees, setEmployeeCode, loading, error } = useEmployee();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const showBack = pathname !== "/";
+
+  function onPersonaSelect(code: string) {
+    setEmployeeCode(code);
+    navigate("/");
+  }
 
   return (
     <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_top,_#e8f3f1_0%,_#f7faf9_45%,_#eef2f1_100%)] text-slate-900">
@@ -40,7 +46,7 @@ export function AppShell({ children }: AppShellProps) {
               <PersonaSwitcher
                 employee={employee}
                 employees={employees}
-                onSelect={setEmployeeCode}
+                onSelect={onPersonaSelect}
               />
             ) : (
               <span className="rounded-full bg-white/10 px-3 py-2 text-xs text-teal-100">

@@ -37,13 +37,21 @@ function todayIso(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function TravelRequestForm() {
+interface TravelRequestFormProps {
+  editId?: string;
+  initialValues?: TravelRequestFormValues;
+}
+
+export function TravelRequestForm({
+  editId,
+  initialValues,
+}: TravelRequestFormProps) {
   const today = todayIso();
   const [values, setValues] = useState<TravelRequestFormValues>(
-    createInitialFormValues,
+    () => initialValues ?? createInitialFormValues(),
   );
   const { submitting, errors, apiError, created, submit, clearFeedback, reset } =
-    useCreateTravelRequest();
+    useCreateTravelRequest(editId);
 
   const estimatedCost = sumEstimatedHeads(values.estimated_heads);
   const maxAdvance = maxAdvanceFor(
@@ -106,10 +114,10 @@ export function TravelRequestForm() {
             Create another
           </Button>
           <Link
-            to="/travel-requests"
+            to={`/travel-requests/${created.travel_request_id}`}
             className="inline-flex items-center justify-center rounded-md bg-teal-800 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-teal-900"
           >
-            Track requests
+            View request
           </Link>
         </div>
       </div>

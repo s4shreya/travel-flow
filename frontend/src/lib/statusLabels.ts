@@ -1,3 +1,5 @@
+/** Human-readable status labels for request / settlement / decisions. */
+
 import type {
   ApprovalDecision,
   TravelRequestStatus,
@@ -9,6 +11,17 @@ const REQUEST_STATUS_LABELS: Record<TravelRequestStatus, string> = {
   approved: "Approved",
   in_settlement: "In Settlement",
   closed: "Closed",
+};
+
+const SETTLEMENT_STATUS_LABELS: Record<string, string> = {
+  draft: "Settlement draft",
+  submitted: "Settlement submitted",
+  returned: "Settlement returned",
+  in_approval: "Settlement pending approval",
+  finance_review: "Settlement with Finance",
+  queued_for_payment: "Awaiting fund release",
+  paid: "Funds released / recovered",
+  recoverable: "Excess advance — payroll recovery",
 };
 
 const DECISION_LABELS: Record<ApprovalDecision, string> = {
@@ -24,10 +37,14 @@ export function formatRequestStatus(status: string): string {
   if (status in REQUEST_STATUS_LABELS) {
     return REQUEST_STATUS_LABELS[status as TravelRequestStatus];
   }
-  return status
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  return titleCase(status);
+}
+
+export function formatSettlementStatus(status: string): string {
+  if (status in SETTLEMENT_STATUS_LABELS) {
+    return SETTLEMENT_STATUS_LABELS[status];
+  }
+  return titleCase(status);
 }
 
 /** Human-readable approval decision for UI. */
@@ -36,4 +53,11 @@ export function formatDecision(decision: string): string {
     return DECISION_LABELS[decision as ApprovalDecision];
   }
   return decision.charAt(0).toUpperCase() + decision.slice(1);
+}
+
+function titleCase(status: string): string {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

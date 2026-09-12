@@ -9,3 +9,12 @@ export function fetchAdvancesQueue(
     employeeCode,
   });
 }
+
+export function fetchSettlementPaymentsQueue(
+  employeeCode: string,
+): Promise<TravelRequestListItem[]> {
+  return apiFetch<TravelRequestListItem[]>(
+    "/api/finance/settlement-payments",
+    { method: "GET", employeeCode },
+  );
+}
