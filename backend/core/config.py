@@ -1,6 +1,5 @@
 import os
 import logging
-import redis
 from dotenv import load_dotenv, find_dotenv
 
 # Loads environment variables
@@ -21,10 +20,6 @@ POSTGRES_DB_PASSWORD = os.getenv("DB_PASSWORD")
 POSTGRES_DB_HOST = os.getenv("DB_HOST")
 POSTGRES_DB_PORT = os.getenv("DB_PORT")
 
-# Redis database
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = os.getenv("REDIS_PORT", 6379)
-
 
 # Logs filename
 LOGS_FILENAME = "logs_travel_flow.log"
@@ -44,12 +39,4 @@ logger.addHandler(file_handler)
 POSTGRES_DATABASE_URL = (
     f"postgresql+psycopg://{POSTGRES_DB_USER}:{POSTGRES_DB_PASSWORD}"
     f"@{POSTGRES_DB_HOST}:{POSTGRES_DB_PORT}/{POSTGRES_DB_NAME}"
-)
-
-# Redis database
-REDIS_DB = 1 if FASTAPI_ENV == "test" else 0
-
-# Redis connection
-redis_conn = redis.Redis(
-    host=REDIS_HOST, port=REDIS_PORT, decode_responses=True, db=REDIS_DB
 )

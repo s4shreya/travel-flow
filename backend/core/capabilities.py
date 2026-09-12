@@ -21,7 +21,7 @@ _BY_ROLE: dict[EmployeeRole, tuple[Capability, ...]] = {
     EmployeeRole.HEAD_OF_DEPARTMENT: (*_BASE, Capability.APPROVE_REQUESTS),
     EmployeeRole.HEAD_OF_DIVISION: (*_BASE, Capability.APPROVE_REQUESTS),
     EmployeeRole.MD: (*_BASE, Capability.APPROVE_REQUESTS),
-    EmployeeRole.FINANCE: (*_BASE, Capability.RELEASE_FUNDS),
+    EmployeeRole.FINANCE: (*_BASE, Capability.RELEASE_FUNDS, Capability.APPROVE_REQUESTS),
 }
 
 

@@ -120,8 +120,20 @@ class TravelRequestListItem(BaseModel):
     advance_requested: Decimal
     advance_disbursed: Decimal
     created_at: datetime
+    progress_label: str | None = None
+    pending_with: str | None = None
+    settlement_status: str | None = None
+    settlement_amount_payable: Decimal | None = None
+    settlement_amount_recoverable: Decimal | None = None
 
 
 class AdvanceReleaseRequest(BaseModel):
     amount: Decimal = Field(..., gt=0)
     reference: str = Field(..., min_length=1, max_length=64)
+
+
+class TravelRequestUpdate(TravelRequestCreate):
+    """Edit a draft travel request (same fields as create)."""
+
+    pass
+

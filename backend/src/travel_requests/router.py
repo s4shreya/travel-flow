@@ -12,6 +12,7 @@ from src.travel_requests.schemas import (
     TravelRequestCreate,
     TravelRequestListItem,
     TravelRequestRead,
+    TravelRequestUpdate,
 )
 from src.travel_requests.service import TravelRequestService
 
@@ -36,6 +37,23 @@ def create_travel_request(
     return TravelRequestRead.model_validate(created)
 
 
+@router.put(
+    "/{travel_request_id}",
+    response_model=TravelRequestRead,
+    summary="Update a draft travel request",
+)
+def update_travel_request(
+    travel_request_id: str,
+    payload: TravelRequestUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    employee: Annotated[
+        Employee, Depends(require_capability(Capability.CREATE_REQUEST))
+    ],
+) -> TravelRequestRead:
+    updated = TravelRequestService(db).update(employee, travel_request_id, payload)
+    return TravelRequestRead.model_validate(updated)
+
+
 @router.get(
     "",
     response_model=list[TravelRequestListItem],
@@ -47,8 +65,7 @@ def list_my_travel_requests(
         Employee, Depends(require_capability(Capability.TRACK_REQUESTS))
     ],
 ) -> list[TravelRequestListItem]:
-    rows = TravelRequestService(db).list_mine(employee)
-    return [TravelRequestListItem.model_validate(row) for row in rows]
+    return TravelRequestService(db).list_mine_items(employee)
 
 
 @router.get(
@@ -59,10 +76,9 @@ def list_my_travel_requests(
 def get_travel_request(
     travel_request_id: str,
     db: Annotated[Session, Depends(get_db)],
-    employee: Annotated[
-        Employee, Depends(require_capability(Capability.TRACK_REQUESTS))
-    ],
+    employee: Annotated[Employee, Depends(get_current_employee)],
 ) -> TravelRequestRead:
+    # Authz is enforced in the service (owner / current approver / finance)
     row = TravelRequestService(db).get_for_viewer(employee, travel_request_id)
     return TravelRequestRead.model_validate(row)
 

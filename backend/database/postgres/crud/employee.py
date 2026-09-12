@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.postgres.models.employee import Employee
+from database.postgres.models.enums import EmployeeRole
 
 
 class EmployeeCRUD:
@@ -35,3 +36,8 @@ class EmployeeCRUD:
             chain.append(manager)
             current_id = manager.reporting_manager_id
         return chain
+
+    def first_by_role(self, role: EmployeeRole) -> Employee | None:
+        """First employee with the given role (used for Finance settlement step)."""
+        stmt = select(Employee).where(Employee.role == role).order_by(Employee.id)
+        return self.db.execute(stmt).scalars().first()

@@ -118,3 +118,8 @@ class TravelRequest(Base):
         cascade="all, delete-orphan",
         order_by="TravelRequestApproval.level",
     )
+    receipts: Mapped[list["TravelReceipt"]] = relationship(
+        back_populates="travel_request",
+        cascade="all, delete-orphan",
+        order_by="TravelReceipt.created_at",
+    )

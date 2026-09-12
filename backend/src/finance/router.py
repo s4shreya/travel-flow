@@ -22,5 +22,18 @@ def list_advances(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[Employee, Depends(require_capability(Capability.RELEASE_FUNDS))],
 ) -> list[TravelRequestListItem]:
-    rows = TravelRequestService(db).list_awaiting_advance()
-    return [TravelRequestListItem.model_validate(row) for row in rows]
+    service = TravelRequestService(db)
+    rows = service.list_awaiting_advance()
+    return [service._to_list_item(row) for row in rows]
+
+
+@router.get(
+    "/settlement-payments",
+    response_model=list[TravelRequestListItem],
+    summary="Settlements awaiting fund release or payroll recovery note",
+)
+def list_settlement_payments(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[Employee, Depends(require_capability(Capability.RELEASE_FUNDS))],
+) -> list[TravelRequestListItem]:
+    return TravelRequestService(db).list_awaiting_settlement_payment()

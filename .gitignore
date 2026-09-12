@@ -43,3 +43,6 @@ env
 # Env files
 .env
 .env.example
+
+# Uploaded receipts
+backend/uploads/

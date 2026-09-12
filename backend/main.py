@@ -14,6 +14,9 @@ from core.exceptions import AppException, app_exception_handler
 from src.approvals.router import router as approvals_router
 from src.finance.router import router as finance_router
 from src.me.router import router as me_router
+from src.notifications.router import router as notifications_router
+from src.receipts.router import router as receipts_router
+from src.settlements.router import router as settlements_router
 from src.travel_requests.router import router as travel_requests_router
 
 
@@ -21,8 +24,11 @@ from src.travel_requests.router import router as travel_requests_router
 INCLUDE_ROUTERS = [
     me_router,
     travel_requests_router,
+    receipts_router,
+    settlements_router,
     approvals_router,
     finance_router,
+    notifications_router,
 ]
 
 
