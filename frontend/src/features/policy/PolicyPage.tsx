@@ -3,8 +3,8 @@ import Markdown, { type Components } from "react-markdown";
 import { useLocation } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 
-import policyMarkdown from "@docs/expense_policy.md?raw";
 import { PageHeader } from "@/components/layout/PageHeader";
+import policyMarkdown from "@/content/expense_policy.md?raw";
 import { POLICY } from "@/config/policy";
 
 function textOf(node: ReactNode): string {
