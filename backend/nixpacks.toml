@@ -1,0 +1,3 @@
+# Receipt OCR needs the Tesseract binary (pytesseract is only a wrapper)
+[phases.setup]
+aptPkgs = ["...", "tesseract-ocr", "tesseract-ocr-eng"]
