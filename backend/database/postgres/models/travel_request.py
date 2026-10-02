@@ -40,11 +40,10 @@ class TravelRequest(Base):
         nullable=False,
         index=True,
     )
-
-    start_date: Mapped[date] = mapped_column(Date, nullable=False)
-    end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    destination: Mapped[str] = mapped_column(String(255), nullable=False)
-    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    destination: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     travel_category: Mapped[TravelCategory] = mapped_column(
         str_enum(TravelCategory, "travel_category"),
         nullable=False,

@@ -1,5 +1,7 @@
 import { Field, Input, TextArea } from "@/components/ui/Field";
+import { formatDate, tripDays } from "@/lib/dates";
 import { formatAmountValue } from "@/lib/money";
+import { plural } from "@/lib/text";
 import type { TravelRequest } from "@/types/travelRequest";
 
 interface TravelRequestFormViewProps {
@@ -21,15 +23,33 @@ export function TravelRequestFormView({ request }: TravelRequestFormViewProps) {
 
       <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2">
         <Field id="view-start" label="From date">
-          <Input id="view-start" value={request.start_date} readOnly disabled />
+          <Input
+            id="view-start"
+            value={request.start_date ? formatDate(request.start_date) : ""}
+            readOnly
+            disabled
+          />
         </Field>
-        <Field id="view-end" label="To date">
-          <Input id="view-end" value={request.end_date} readOnly disabled />
+        <Field
+          id="view-end"
+          label="To date"
+          hint={
+            request.start_date && request.end_date
+              ? plural(tripDays(request.start_date, request.end_date), "day")
+              : undefined
+          }
+        >
+          <Input
+            id="view-end"
+            value={request.end_date ? formatDate(request.end_date) : ""}
+            readOnly
+            disabled
+          />
         </Field>
         <Field id="view-destination" label="Destination">
           <Input
             id="view-destination"
-            value={request.destination}
+            value={request.destination ?? ""}
             readOnly
             disabled
           />
@@ -73,7 +93,7 @@ export function TravelRequestFormView({ request }: TravelRequestFormViewProps) {
           <Field id="view-purpose" label="Purpose">
             <TextArea
               id="view-purpose"
-              value={request.purpose}
+              value={request.purpose ?? ""}
               readOnly
               disabled
             />

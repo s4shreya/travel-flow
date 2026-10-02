@@ -1,6 +1,9 @@
+from typing import Any, Self
+
 from pydantic import BaseModel, ConfigDict
 
-from core.capabilities import Capability
+from core.capabilities import Capability, capabilities_for_role
+from database.postgres.models.employee import Employee
 from database.postgres.models.enums import EmployeeRole
 
 
@@ -21,3 +24,11 @@ class MeResponse(BaseModel):
 
     employee: EmployeeSummary
     capabilities: list[Capability]
+
+    @classmethod
+    def for_employee(cls, employee: Employee, **extra: Any) -> Self:
+        return cls(
+            employee=EmployeeSummary.model_validate(employee),
+            capabilities=capabilities_for_role(employee.role),
+            **extra,
+        )

@@ -9,6 +9,7 @@ from database.postgres.models.employee import Employee
 from database.postgres.session import get_db
 from src.travel_requests.schemas import (
     AdvanceReleaseRequest,
+    FinanceRemarksRequest,
     TravelRequestCreate,
     TravelRequestListItem,
     TravelRequestRead,
@@ -92,7 +93,26 @@ def release_advance(
     travel_request_id: str,
     payload: AdvanceReleaseRequest,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[Employee, Depends(require_capability(Capability.RELEASE_FUNDS))],
+    employee: Annotated[
+        Employee, Depends(require_capability(Capability.RELEASE_FUNDS))
+    ],
 ) -> TravelRequestRead:
-    row = TravelRequestService(db).release_advance(travel_request_id, payload)
+    row = TravelRequestService(db).release_advance(employee, travel_request_id, payload)
+    return TravelRequestRead.model_validate(row)
+
+
+@router.post(
+    "/{travel_request_id}/advance/decline",
+    response_model=TravelRequestRead,
+    summary="Decline the unpaid travel advance (Finance)",
+)
+def decline_advance(
+    travel_request_id: str,
+    payload: FinanceRemarksRequest,
+    db: Annotated[Session, Depends(get_db)],
+    employee: Annotated[
+        Employee, Depends(require_capability(Capability.RELEASE_FUNDS))
+    ],
+) -> TravelRequestRead:
+    row = TravelRequestService(db).decline_advance(employee, travel_request_id, payload)
     return TravelRequestRead.model_validate(row)

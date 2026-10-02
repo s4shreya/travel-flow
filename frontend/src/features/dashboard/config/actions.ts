@@ -1,3 +1,14 @@
+import {
+  BarChart3,
+  ClipboardCheck,
+  FilePlus2,
+  ListChecks,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
+
+import { paths } from "@/lib/routes";
 import type { Capability } from "@/types/auth";
 
 export interface DashboardAction {
@@ -5,47 +16,59 @@ export interface DashboardAction {
   title: string;
   description: string;
   to: string;
-  /** If set, tile is shown only when the signed-in role has this capability. */
+  icon: LucideIcon;
+  /** If set, the action is shown only when the signed-in role has this capability. */
   capability?: Capability;
-  /** Accent label shown on the tile. */
-  eyebrow: string;
 }
 
-/** Single source of truth for dashboard action blocks. */
+/** Single source of truth for dashboard quick actions. */
 export const DASHBOARD_ACTIONS: DashboardAction[] = [
   {
     id: "create-request",
-    eyebrow: "Request",
-    title: "Create travel request",
-    description: "Raise a new travel request for your upcoming trip.",
-    to: "/travel-requests/new",
+    title: "Raise a request",
+    description: "Domestic or international travel request.",
+    to: paths.claims,
+    icon: FilePlus2,
     capability: "create_request",
   },
   {
     id: "track-requests",
-    eyebrow: "Track",
-    title: "Track travel requests",
-    description:
-      "Track the status of your travel requests and view your travel history.",
-    to: "/travel-requests",
+    title: "Track my requests",
+    description: "Status, advances and settlements.",
+    to: paths.myRequests,
+    icon: ListChecks,
     capability: "track_requests",
   },
   {
     id: "approve-requests",
-    eyebrow: "Approvals",
-    title: "Approve requests",
-    description:
-      "Review pending travel requests.",
-    to: "/approvals",
+    title: "Review approvals",
+    description: "Requests and settlements awaiting you.",
+    to: paths.approvals,
+    icon: ClipboardCheck,
     capability: "approve_requests",
   },
   {
     id: "release-funds",
-    eyebrow: "Finance",
-    title: "Release funds",
-    description:
-      "Disburse travel advances.",
-    to: "/finance",
+    title: "Payments",
+    description: "Release advances and settlement payments.",
+    to: paths.finance,
+    icon: Wallet,
     capability: "release_funds",
+  },
+  {
+    id: "view-reports",
+    title: "Reports",
+    description: "Organisation spend, trends and exports.",
+    to: paths.reports,
+    icon: BarChart3,
+    capability: "view_reports",
+  },
+  {
+    id: "view-employees",
+    title: "Employees",
+    description: "Directory, roles and reporting lines.",
+    to: paths.employees,
+    icon: Users,
+    capability: "view_employees",
   },
 ];

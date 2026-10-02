@@ -1,4 +1,4 @@
-import { MAX_ADVANCE_RATIO } from "@/config/env";
+import { MAX_ADVANCE_RATIO } from "@/config/policy";
 
 /** Parse a money input into a finite number, or NaN if invalid. */
 export function parseMoney(value: string): number {
@@ -56,6 +56,34 @@ export function formatAmountValue(value: string | number): string {
     typeof value === "number" ? value : parseMoney(String(value));
   if (!Number.isFinite(amount)) return String(value);
   return formatAmount(amount);
+}
+
+/** API amount (string / number / null) as a number; 0 when missing or invalid. */
+export function moneyValue(value: string | number | null | undefined): number {
+  if (value == null) return 0;
+  const amount = typeof value === "number" ? value : parseMoney(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+/** Sum one money field across a list, e.g. advance received over trips. */
+export function sumMoney<T>(
+  items: T[],
+  pick: (item: T) => string | number | null | undefined,
+): number {
+  return items.reduce((total, item) => total + moneyValue(pick(item)), 0);
+}
+
+/** "₹1,20,000" — whole rupees for KPI tiles, chart tooltips and toasts (API strings accepted). */
+export function formatRupees(value: string | number | null | undefined): string {
+  return `₹${Math.round(moneyValue(value)).toLocaleString("en-IN")}`;
+}
+
+/** "₹2.5 L" / "₹1.2 Cr" / "₹45K" — short form for chart axes. */
+export function formatCompactInr(value: number): string {
+  if (value >= 1e7) return `₹${+(value / 1e7).toFixed(1)} Cr`;
+  if (value >= 1e5) return `₹${+(value / 1e5).toFixed(1)} L`;
+  if (value >= 1e3) return `₹${+(value / 1e3).toFixed(1)}K`;
+  return `₹${Math.round(value)}`;
 }
 
 /** Max advance allowed for an estimated cost (policy 60%). */

@@ -15,6 +15,8 @@ export type TravelCategory = (typeof TRAVEL_CATEGORIES)[number];
 export type TravelMode = (typeof TRAVEL_MODES)[number];
 export type BorneBy = (typeof BORNE_BY_OPTIONS)[number];
 
+export const EMPLOYEE_PAID: BorneBy = "Employee";
+
 export type TravelRequestStatus =
   | "draft"
   | "pending_approval"
@@ -37,10 +39,11 @@ export interface EstimatedHead {
 }
 
 export interface TravelRequestCreatePayload {
-  start_date: string;
-  end_date: string;
-  destination: string;
-  purpose: string;
+  // null while a draft leaves them empty
+  start_date: string | null;
+  end_date: string | null;
+  destination: string | null;
+  purpose: string | null;
   travel_category: TravelCategory;
   travel_mode: TravelMode;
   currency: string;
@@ -55,6 +58,7 @@ export interface ApprovalStep {
   level: number;
   role_required: string;
   approver_id: number | null;
+  approver_name: string | null;
   decision: ApprovalDecision;
   remarks: string | null;
   decided_at: string | null;
@@ -65,10 +69,13 @@ export interface TravelRequest {
   id: number;
   travel_request_id: string;
   employee_id: number;
-  start_date: string;
-  end_date: string;
-  destination: string;
-  purpose: string;
+  /** Requester's name. */
+  employee_name: string;
+  // null only on drafts
+  start_date: string | null;
+  end_date: string | null;
+  destination: string | null;
+  purpose: string | null;
   travel_category: TravelCategory;
   travel_mode: TravelMode;
   currency: string;
@@ -86,4 +93,6 @@ export interface ApiErrorBody {
   sub_status_code?: string;
   message?: string;
   details?: string;
+  /** All field errors on a 422 validation response. */
+  errors?: { field: string | null; message: string }[];
 }

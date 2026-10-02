@@ -33,11 +33,22 @@ class EmployeeCRUD:
             manager = self.get_by("id", current_id)
             if manager is None:
                 break
-            chain.append(manager)
+            # Inactive managers cannot approve; keep walking up to the next one
+            if manager.is_active:
+                chain.append(manager)
             current_id = manager.reporting_manager_id
         return chain
 
-    def first_by_role(self, role: EmployeeRole) -> Employee | None:
-        """First employee with the given role (used for Finance settlement step)."""
-        stmt = select(Employee).where(Employee.role == role).order_by(Employee.id)
+    def first_by_role(
+        self, role: EmployeeRole, *, exclude_id: int | None = None
+    ) -> Employee | None:
+        """First active employee with the given role (used for the Finance settlement review)."""
+        stmt = (
+            select(Employee)
+            .where(Employee.role == role, Employee.is_active.is_(True))
+            .order_by(Employee.id)
+        )
+        # Nobody reviews their own claim
+        if exclude_id is not None:
+            stmt = stmt.where(Employee.id != exclude_id)
         return self.db.execute(stmt).scalars().first()

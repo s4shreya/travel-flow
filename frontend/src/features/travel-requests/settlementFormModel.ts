@@ -1,231 +1,222 @@
+/** Settlement expense lines: API shape ↔ editable draft, plus display helpers. */
+
+import type { ReceiptExpensePayload } from "@/api/receipts";
 import type { SettlementExpense } from "@/api/settlements";
-import { parseMoney, toApiAmount } from "@/lib/money";
+import { daysBetween, formatDate, formatDateRange } from "@/lib/dates";
+import { formatMoneyInput, parseMoney, toApiAmount } from "@/lib/money";
+import {
+  DESCRIPTION_MAX,
+  MAX_LODGING_NIGHTS,
+  moneyError,
+  outsideTripError,
+} from "@/lib/validation";
 
-export interface LodgingLine {
-  check_in: string;
-  check_out: string;
-  hotel_name: string;
-  city: string;
-  paid_by: string;
-  amount: string;
-  proof_ref: string;
+export interface TripWindow {
+  start_date: string | null;
+  end_date: string | null;
 }
 
-export interface TransportLine {
-  expense_date: string;
-  expense_time: string;
-  from_location: string;
-  to_location: string;
-  mode: string;
-  paid_by: string;
-  amount: string;
-  proof_ref: string;
+/** Editable expense line: receipt payload + the receipt it is linked to (proof). */
+export type ExpenseDraft = ReceiptExpensePayload & { proof_ref: string | null };
+
+// Travel-desk onward / return travel and hotel, added (company-paid) when the trip is approved
+const DESK_PROOFS = new Set(["DESK-FLIGHT", "DESK-RETURN", "DESK-HOTEL"]);
+
+export function isDeskLine(line: Pick<SettlementExpense, "proof_ref">): boolean {
+  return line.proof_ref != null && DESK_PROOFS.has(line.proof_ref);
 }
 
-export interface OtherLine {
-  expense_date: string;
-  head: string;
-  description: string;
-  paid_by: string;
-  amount: string;
-  proof_ref: string;
+/** Lines need a receipt (or a desk booking) before the claim can be submitted. */
+export function needsReceipt(line: Pick<SettlementExpense, "proof_ref">): boolean {
+  return !line.proof_ref;
 }
 
-export type SettlementLineErrors = {
-  lodging: Record<number, Partial<Record<keyof LodgingLine, string>>>;
-  transport: Record<number, Partial<Record<keyof TransportLine, string>>>;
-  other: Record<number, Partial<Record<keyof OtherLine, string>>>;
-  form?: string;
-};
-
-export const EMPTY_LODGING: LodgingLine = {
-  check_in: "",
-  check_out: "",
-  hotel_name: "",
-  city: "",
-  paid_by: "Employee",
-  amount: "",
-  proof_ref: "",
-};
-
-export const EMPTY_TRANSPORT: TransportLine = {
-  expense_date: "",
-  expense_time: "",
-  from_location: "",
-  to_location: "",
-  mode: "Cab",
-  paid_by: "Employee",
-  amount: "",
-  proof_ref: "",
-};
-
-export const EMPTY_OTHER: OtherLine = {
-  expense_date: "",
-  head: "",
-  description: "",
-  paid_by: "Employee",
-  amount: "",
-  proof_ref: "",
-};
-
-function isBlankLodging(row: LodgingLine): boolean {
-  return !(
-    row.check_in ||
-    row.check_out ||
-    row.hotel_name.trim() ||
-    row.city.trim() ||
-    row.amount.trim() ||
-    row.proof_ref
-  );
+/** Uploaded receipt behind a line (none for desk bookings or missing proof). */
+export function receiptIdOf(line: Pick<SettlementExpense, "proof_ref">): string | null {
+  return line.proof_ref && !isDeskLine(line) ? line.proof_ref : null;
 }
 
-function isBlankTransport(row: TransportLine): boolean {
-  // Ignore default mode ("Cab") so an unused blank row is not treated as filled
-  return !(
-    row.expense_date ||
-    row.from_location.trim() ||
-    row.to_location.trim() ||
-    row.amount.trim() ||
-    row.proof_ref
-  );
+/** Proof label: travel desk booking, receipt number, or missing. */
+export function proofLabel(line: Pick<SettlementExpense, "proof_ref">): string {
+  if (isDeskLine(line)) return "Travel desk";
+  return line.proof_ref ? `Receipt #${line.proof_ref}` : "Missing";
 }
 
-function isBlankOther(row: OtherLine): boolean {
-  return !(
-    row.expense_date ||
-    row.head.trim() ||
-    row.description.trim() ||
-    row.amount.trim() ||
-    row.proof_ref
-  );
-}
-
-function validateAmount(amount: string): string | undefined {
-  if (!amount.trim()) return "Amount is required";
-  const value = parseMoney(amount);
-  if (!Number.isFinite(value) || value < 0) return "Enter a valid amount";
-  return undefined;
-}
-
-/** Validate filled settlement rows; blank rows are ignored. */
-export function validateSettlementForm(
-  lodging: LodgingLine[],
-  transport: TransportLine[],
-  other: OtherLine[],
-): SettlementLineErrors {
-  const errors: SettlementLineErrors = {
-    lodging: {},
-    transport: {},
-    other: {},
+export function emptyDraft(): ExpenseDraft {
+  return {
+    section: "other",
+    paid_by: "Employee",
+    amount: "",
+    check_in: null,
+    check_out: null,
+    hotel_name: null,
+    city: null,
+    expense_date: null,
+    expense_time: null,
+    from_location: null,
+    to_location: null,
+    mode: null,
+    head: null,
+    description: null,
+    disallowed_amount: "",
+    disallow_reason: null,
+    proof_ref: null,
   };
+}
 
-  lodging.forEach((row, index) => {
-    if (isBlankLodging(row)) return;
-    const rowErrors: Partial<Record<keyof LodgingLine, string>> = {};
-    if (!row.check_in) rowErrors.check_in = "Required";
-    if (!row.check_out) rowErrors.check_out = "Required";
-    if (row.check_in && row.check_out && row.check_out < row.check_in) {
-      rowErrors.check_out = "Must be on/after check-in";
+/** Saved line → editable draft. */
+export function toDraft(line: SettlementExpense): ExpenseDraft {
+  // Keep the policy deduction set from the receipt scan
+  const disallowed = Number(line.disallowed_amount ?? 0);
+  return {
+    ...emptyDraft(),
+    section: line.section,
+    paid_by: line.paid_by,
+    amount: formatMoneyInput(String(line.amount ?? "")),
+    check_in: line.check_in ?? null,
+    check_out: line.check_out ?? null,
+    hotel_name: line.hotel_name ?? null,
+    city: line.city ?? null,
+    expense_date: line.expense_date ?? null,
+    expense_time: line.expense_time ? String(line.expense_time).slice(0, 5) : null,
+    from_location: line.from_location ?? null,
+    to_location: line.to_location ?? null,
+    mode: line.mode ?? null,
+    head: line.head ?? null,
+    description: line.description ?? null,
+    disallowed_amount: disallowed > 0 ? formatMoneyInput(String(line.disallowed_amount)) : "",
+    disallow_reason: disallowed > 0 ? line.disallow_reason ?? null : null,
+    proof_ref: line.proof_ref,
+  };
+}
+
+/** Draft → API line with only its section's fields; company-paid lines carry no deduction. */
+export function toExpense(draft: ExpenseDraft): SettlementExpense {
+  const amount = parseMoney(draft.amount) || 0;
+  // Disallowed part never exceeds the bill
+  const disallowed =
+    draft.paid_by === "Employee" ? Math.min(parseMoney(draft.disallowed_amount ?? "") || 0, amount) : 0;
+  const base = {
+    section: draft.section,
+    paid_by: draft.paid_by,
+    amount: toApiAmount(amount),
+    proof_ref: draft.proof_ref || null,
+    disallowed_amount: toApiAmount(disallowed),
+    disallow_reason: disallowed > 0 ? draft.disallow_reason?.trim() || "Policy limit" : null,
+  };
+  if (draft.section === "lodging") {
+    return {
+      ...base,
+      check_in: draft.check_in,
+      check_out: draft.check_out,
+      hotel_name: draft.hotel_name?.trim() ?? null,
+      city: draft.city?.trim() ?? null,
+    };
+  }
+  if (draft.section === "transport") {
+    return {
+      ...base,
+      expense_date: draft.expense_date,
+      expense_time: draft.expense_time || null,
+      from_location: draft.from_location?.trim() ?? null,
+      to_location: draft.to_location?.trim() ?? null,
+      mode: draft.mode,
+    };
+  }
+  return {
+    ...base,
+    expense_date: draft.expense_date,
+    head: draft.head?.trim() ?? null,
+    description: draft.description?.trim() || null,
+  };
+}
+
+export type ExpenseErrors = Partial<Record<keyof ReceiptExpensePayload | "form", string>>;
+
+/** Client-side validation matching settlement expense rules. */
+export function validateExpense(draft: ExpenseDraft, trip?: TripWindow): ExpenseErrors {
+  const errors: ExpenseErrors = {};
+
+  // Outside the trip window
+  const dateError = (value?: string | null) => outsideTripError(value, trip);
+
+  const amountError = moneyError(draft.amount, { positive: true });
+  if (amountError) errors.amount = amountError;
+
+  // Disallowed part: never more than the bill, and always explained
+  if (draft.paid_by === "Employee" && draft.disallowed_amount?.trim()) {
+    const disallowedError = moneyError(draft.disallowed_amount);
+    const disallowed = parseMoney(draft.disallowed_amount) || 0;
+    if (disallowedError) errors.disallowed_amount = disallowedError;
+    else if (!amountError && disallowed > (parseMoney(draft.amount) || 0)) {
+      errors.disallowed_amount = "Disallowed amount cannot exceed the bill amount";
+    } else if (disallowed > 0 && !draft.disallow_reason?.trim()) {
+      errors.disallow_reason = "Give a reason for the disallowed amount";
     }
-    if (!row.hotel_name.trim()) rowErrors.hotel_name = "Required";
-    if (!row.city.trim()) rowErrors.city = "Required";
-    const amountError = validateAmount(row.amount);
-    if (amountError) rowErrors.amount = amountError;
-    if (Object.keys(rowErrors).length) errors.lodging[index] = rowErrors;
-  });
+  }
+  if ((draft.disallow_reason?.trim().length ?? 0) > 255) {
+    errors.disallow_reason = "Reason cannot exceed 255 characters";
+  }
 
-  transport.forEach((row, index) => {
-    if (isBlankTransport(row)) return;
-    const rowErrors: Partial<Record<keyof TransportLine, string>> = {};
-    if (!row.expense_date) rowErrors.expense_date = "Required";
-    if (!row.from_location.trim()) rowErrors.from_location = "Required";
-    if (!row.to_location.trim()) rowErrors.to_location = "Required";
-    if (!row.mode.trim()) rowErrors.mode = "Required";
-    const amountError = validateAmount(row.amount);
-    if (amountError) rowErrors.amount = amountError;
-    if (Object.keys(rowErrors).length) errors.transport[index] = rowErrors;
-  });
-
-  other.forEach((row, index) => {
-    if (isBlankOther(row)) return;
-    const rowErrors: Partial<Record<keyof OtherLine, string>> = {};
-    if (!row.expense_date) rowErrors.expense_date = "Required";
-    if (!row.head.trim()) rowErrors.head = "Required";
-    const amountError = validateAmount(row.amount);
-    if (amountError) rowErrors.amount = amountError;
-    if (Object.keys(rowErrors).length) errors.other[index] = rowErrors;
-  });
-
-  const hasRowErrors =
-    Object.keys(errors.lodging).length > 0 ||
-    Object.keys(errors.transport).length > 0 ||
-    Object.keys(errors.other).length > 0;
-
-  const hasAnyLine =
-    lodging.some((row) => !isBlankLodging(row)) ||
-    transport.some((row) => !isBlankTransport(row)) ||
-    other.some((row) => !isBlankOther(row));
-
-  if (!hasAnyLine) {
-    errors.form = "Add at least one complete expense line";
-  } else if (hasRowErrors) {
-    errors.form = "Fix the highlighted expense fields before saving";
+  if (draft.section === "lodging") {
+    if (!draft.check_in) errors.check_in = "Check-in is required";
+    if (!draft.check_out) errors.check_out = "Check-out is required";
+    if (draft.check_in && draft.check_out && draft.check_out < draft.check_in) {
+      errors.check_out = "Check-out must be on or after check-in";
+    } else if (
+      draft.check_in &&
+      draft.check_out &&
+      daysBetween(draft.check_in, draft.check_out) > MAX_LODGING_NIGHTS
+    ) {
+      errors.check_out = `A single stay cannot exceed ${MAX_LODGING_NIGHTS} nights`;
+    }
+    const checkInError = dateError(draft.check_in);
+    if (checkInError) errors.check_in = checkInError;
+    const checkOutError = dateError(draft.check_out);
+    if (checkOutError && !errors.check_out) errors.check_out = checkOutError;
+    if (!draft.hotel_name?.trim()) errors.hotel_name = "Hotel is required";
+    if (!draft.city?.trim()) errors.city = "City is required";
+  } else if (draft.section === "transport") {
+    if (!draft.expense_date) errors.expense_date = "Date is required";
+    else {
+      const error = dateError(draft.expense_date);
+      if (error) errors.expense_date = error;
+    }
+    if (!draft.from_location?.trim()) {
+      errors.from_location = "From location is required";
+    }
+    if (!draft.to_location?.trim()) {
+      errors.to_location = "To location is required";
+    }
+    if (!draft.mode?.trim()) errors.mode = "Mode is required";
+  } else {
+    if (!draft.expense_date) errors.expense_date = "Date is required";
+    else {
+      const error = dateError(draft.expense_date);
+      if (error) errors.expense_date = error;
+    }
+    if (!draft.head?.trim()) errors.head = "Head is required";
+    if ((draft.description?.trim().length ?? 0) > DESCRIPTION_MAX) {
+      errors.description = `Description cannot exceed ${DESCRIPTION_MAX} characters`;
+    }
   }
 
   return errors;
 }
 
-export function settlementHasErrors(errors: SettlementLineErrors): boolean {
-  return Boolean(
-    errors.form ||
-      Object.keys(errors.lodging).length ||
-      Object.keys(errors.transport).length ||
-      Object.keys(errors.other).length,
-  );
-}
-
-/** Build API expense payload from complete (non-blank, valid) rows. */
-export function toSettlementExpenses(
-  lodging: LodgingLine[],
-  transport: TransportLine[],
-  other: OtherLine[],
-): SettlementExpense[] {
-  return [
-    ...lodging
-      .filter((row) => !isBlankLodging(row))
-      .map((row) => ({
-        section: "lodging" as const,
-        check_in: row.check_in,
-        check_out: row.check_out,
-        hotel_name: row.hotel_name.trim(),
-        city: row.city.trim(),
-        paid_by: row.paid_by as "Employee" | "Company",
-        amount: toApiAmount(parseMoney(row.amount) || 0),
-        proof_ref: row.proof_ref || null,
-      })),
-    ...transport
-      .filter((row) => !isBlankTransport(row))
-      .map((row) => ({
-        section: "transport" as const,
-        expense_date: row.expense_date,
-        expense_time: row.expense_time || null,
-        from_location: row.from_location.trim(),
-        to_location: row.to_location.trim(),
-        mode: row.mode.trim(),
-        paid_by: row.paid_by as "Employee" | "Company",
-        amount: toApiAmount(parseMoney(row.amount) || 0),
-        proof_ref: row.proof_ref || null,
-      })),
-    ...other
-      .filter((row) => !isBlankOther(row))
-      .map((row) => ({
-        section: "other" as const,
-        expense_date: row.expense_date,
-        head: row.head.trim(),
-        description: row.description.trim() || null,
-        paid_by: row.paid_by as "Employee" | "Company",
-        amount: toApiAmount(parseMoney(row.amount) || 0),
-        proof_ref: row.proof_ref || null,
-      })),
-  ];
+/** One-line summary of an expense line, by section. */
+export function expenseSummary(line: SettlementExpense): { detail: string; when: string } {
+  if (line.section === "lodging") {
+    return {
+      detail: [line.hotel_name, line.city, line.nights ? `${line.nights} nights` : null]
+        .filter(Boolean)
+        .join(" · "),
+      when: line.check_in && line.check_out ? formatDateRange(line.check_in, line.check_out) : "",
+    };
+  }
+  const detail =
+    line.section === "transport"
+      ? [`${line.from_location ?? ""} → ${line.to_location ?? ""}`, line.mode].filter(Boolean).join(" · ")
+      : [line.head, line.description].filter(Boolean).join(" · ");
+  return { detail, when: line.expense_date ? formatDate(line.expense_date) : "" };
 }

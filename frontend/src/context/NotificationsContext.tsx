@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider + its hook live together */
 import {
   createContext,
   useCallback,
@@ -33,24 +34,36 @@ const NotificationsContext = createContext<NotificationsContextValue | null>(
 );
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const { employeeCode } = useEmployee();
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const { employee } = useEmployee();
+  const employeeId = employee?.id ?? null;
+  const [loaded, setLoaded] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Nothing to show until someone is signed in (and nothing after sign-out)
+  const notifications = useMemo(
+    () => (employeeId ? loaded : []),
+    [employeeId, loaded],
+  );
 
   const refresh = useCallback(async () => {
     try {
-      const rows = await listNotifications(employeeCode);
-      setNotifications(rows);
+      setLoaded(await listNotifications());
     } catch {
-      setNotifications([]);
+      setLoaded([]);
     }
-  }, [employeeCode]);
+  }, []);
 
+  // Load for each signed-in employee
   useEffect(() => {
-    // Start empty for each persona; load from API (populated after advance release)
-    setNotifications([]);
-    void refresh();
-  }, [refresh]);
+    if (!employeeId) return;
+    let cancelled = false;
+    listNotifications()
+      .then((rows) => !cancelled && setLoaded(rows))
+      .catch(() => !cancelled && setLoaded([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [employeeId]);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.read).length,
@@ -58,35 +71,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 
   const markAllRead = useCallback(() => {
-    void (async () => {
-      try {
-        const rows = await markAllNotificationsRead(employeeCode);
-        setNotifications(rows);
-      } catch {
-        setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
-      }
-    })();
-  }, [employeeCode]);
+    markAllNotificationsRead()
+      .then(setLoaded)
+      .catch(() => setLoaded((prev) => prev.map((item) => ({ ...item, read: true }))));
+  }, []);
 
-  const markRead = useCallback(
-    (id: number) => {
-      void (async () => {
-        try {
-          const updated = await markNotificationRead(employeeCode, id);
-          setNotifications((prev) =>
-            prev.map((item) => (item.id === id ? updated : item)),
-          );
-        } catch {
-          setNotifications((prev) =>
-            prev.map((item) =>
-              item.id === id ? { ...item, read: true } : item,
-            ),
-          );
-        }
-      })();
-    },
-    [employeeCode],
-  );
+  const markRead = useCallback((id: number) => {
+    const replace = (next: (item: AppNotification) => AppNotification) =>
+      setLoaded((prev) => prev.map((item) => (item.id === id ? next(item) : item)));
+    markNotificationRead(id)
+      .then((updated) => replace(() => updated))
+      .catch(() => replace((item) => ({ ...item, read: true })));
+  }, []);
 
   const value = useMemo(
     () => ({

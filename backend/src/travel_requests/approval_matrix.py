@@ -3,14 +3,16 @@
 from decimal import Decimal
 
 from database.postgres.models.employee import Employee
-from database.postgres.models.enums import EmployeeRole, TravelCategory
+from database.postgres.models.enums import APPROVAL_LEVELS, EmployeeRole, TravelCategory
 from database.postgres.crud.employee import EmployeeCRUD
-
 
 # Amount thresholds in INR (inclusive upper bounds of each band use ">" cuts)
 _BAND_HOD = Decimal("25000")
 _BAND_HODIV = Decimal("75000")
 _BAND_MD = Decimal("200000")
+
+# One planned step: (level, role_required, approver | None, skipped)
+ApprovalPlanStep = tuple[int, EmployeeRole, Employee | None, bool]
 
 
 def required_approval_roles(
@@ -24,12 +26,7 @@ def required_approval_roles(
     Finance is not part of request approval — they disburse advance separately.
     """
     if travel_category == TravelCategory.INTERNATIONAL:
-        return [
-            EmployeeRole.REPORTING_MANAGER,
-            EmployeeRole.HEAD_OF_DEPARTMENT,
-            EmployeeRole.HEAD_OF_DIVISION,
-            EmployeeRole.MD,
-        ]
+        return list(APPROVAL_LEVELS)
 
     roles: list[EmployeeRole] = [EmployeeRole.REPORTING_MANAGER]
     if estimated_cost > _BAND_HOD:
@@ -43,7 +40,6 @@ def required_approval_roles(
 
 def resolve_approver_for_role(
     role: EmployeeRole,
-    claimant: Employee,
     chain: list[Employee],
 ) -> Employee | None:
     """
@@ -66,27 +62,31 @@ def build_request_approval_plan(
     claimant: Employee,
     estimated_cost: Decimal,
     travel_category: TravelCategory,
-) -> list[tuple[int, EmployeeRole, Employee | None, bool]]:
+) -> list[ApprovalPlanStep]:
     """
     Build ordered approval steps.
 
-    Each tuple: (level, role_required, approver | None, skipped).
-    Self-approval levels are marked skipped (policy §2.2).
+    Policy §2.2: when the claimant holds a level (or nobody up the chain does) that
+    level is skipped and the next level up acts. A person already approving an
+    earlier level is not asked twice.
     """
     roles = required_approval_roles(estimated_cost, travel_category)
     chain = employee_crud.get_management_chain(claimant)
 
-    plan: list[tuple[int, EmployeeRole, Employee | None, bool]] = []
-    level = 1
-    for role in roles:
-        approver = resolve_approver_for_role(role, claimant, chain)
-        # Policy §2.2 — claimant cannot approve their own request
-        self_approve = claimant.role == role or (
-            approver is not None and approver.id == claimant.id
-        )
-        if self_approve:
-            plan.append((level, role, None, True))
+    plan: list[ApprovalPlanStep] = []
+    assigned: set[int] = set()
+    for index, role in enumerate(APPROVAL_LEVELS):
+        if role not in roles:
+            continue
+        approver = resolve_approver_for_role(role, chain)
+        if claimant.role == role or approver is None:
+            plan.append((len(plan) + 1, role, None, True))
+            # hand over to the next level up when it is not already required
+            if index + 1 < len(APPROVAL_LEVELS) and APPROVAL_LEVELS[index + 1] not in roles:
+                roles.append(APPROVAL_LEVELS[index + 1])
+        elif approver.id in assigned:
+            plan.append((len(plan) + 1, role, None, True))
         else:
-            plan.append((level, role, approver, False))
-        level += 1
+            assigned.add(approver.id)
+            plan.append((len(plan) + 1, role, approver, False))
     return plan

@@ -22,9 +22,7 @@ def list_advances(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[Employee, Depends(require_capability(Capability.RELEASE_FUNDS))],
 ) -> list[TravelRequestListItem]:
-    service = TravelRequestService(db)
-    rows = service.list_awaiting_advance()
-    return [service._to_list_item(row) for row in rows]
+    return TravelRequestService(db).list_awaiting_advance()
 
 
 @router.get(

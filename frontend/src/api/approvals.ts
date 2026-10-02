@@ -1,7 +1,11 @@
 import { apiFetch } from "@/api/client";
+import type { ApprovalStep } from "@/types/travelRequest";
+
+export type ApprovalKind = "travel_request" | "settlement";
+export type ApprovalDecisionInput = "approved" | "returned" | "rejected";
 
 export interface ApprovalInboxItem {
-  kind: "travel_request" | "settlement";
+  kind: ApprovalKind;
   approval_id: number;
   travel_request_id: string;
   destination: string;
@@ -9,28 +13,24 @@ export interface ApprovalInboxItem {
   role_required: string;
   amount: string;
   requester_employee_id: number;
+  requester_name: string;
   created_at: string;
+  /** Whole chain for this request / settlement. */
+  approvals: ApprovalStep[];
 }
 
-export function fetchApprovalInbox(
-  employeeCode: string,
-): Promise<ApprovalInboxItem[]> {
-  return apiFetch<ApprovalInboxItem[]>("/api/approvals/inbox", {
-    method: "GET",
-    employeeCode,
-  });
+export function fetchApprovalInbox(): Promise<ApprovalInboxItem[]> {
+  return apiFetch<ApprovalInboxItem[]>("/api/approvals/inbox");
 }
 
 export function decideApproval(
-  employeeCode: string,
   approvalId: number,
-  decision: "approved" | "returned" | "rejected",
+  decision: ApprovalDecisionInput,
   remarks?: string,
-  kind: "travel_request" | "settlement" = "travel_request",
-): Promise<unknown> {
-  return apiFetch(`/api/approvals/${approvalId}/decide`, {
+  kind: ApprovalKind = "travel_request",
+): Promise<ApprovalStep> {
+  return apiFetch<ApprovalStep>(`/api/approvals/${approvalId}/decide`, {
     method: "POST",
-    employeeCode,
     body: { decision, remarks: remarks ?? null, kind },
   });
 }

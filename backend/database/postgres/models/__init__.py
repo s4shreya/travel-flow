@@ -4,7 +4,6 @@ from database.postgres.models.travel_approvals import (
 )
 from database.postgres.models.employee import Employee
 from database.postgres.models.enums import (
-    APPROVER_ROLES,
     ApprovalDecision,
     EmployeeRole,
     ExpenseSection,
@@ -15,6 +14,7 @@ from database.postgres.models.enums import (
     TravelRequestStatus,
 )
 from database.postgres.models.notification import AppNotification
+from database.postgres.models.refresh_token import RefreshToken
 from database.postgres.models.travel_expense import (
     TravelExpense,
     TravelExpenseLodging,
@@ -26,13 +26,13 @@ from database.postgres.models.travel_request import TravelRequest
 from database.postgres.models.travel_settlement import TravelSettlement
 
 __all__ = [
-    "APPROVER_ROLES",
     "AppNotification",
     "ApprovalDecision",
     "Employee",
     "EmployeeRole",
     "ExpenseSection",
     "PaidBy",
+    "RefreshToken",
     "SettlementStatus",
     "TravelCategory",
     "TravelExpense",

@@ -1,62 +1,102 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { Combobox } from "@/components/ui/Combobox";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { Field, Input, TextArea } from "@/components/ui/Field";
 import { SelectMenu } from "@/components/ui/SelectMenu";
+import { TripProgress } from "@/components/ui/TripProgress";
+import { useConfirm } from "@/hooks/useConfirm";
+import { toOptions } from "@/config/options";
+import { MAX_ADVANCE_PERCENT } from "@/config/policy";
 import { EstimatedHeadsEditor } from "@/features/travel-requests/EstimatedHeadsEditor";
 import {
-  TRAVEL_CATEGORIES,
+  DOMESTIC_CATEGORIES,
   TRAVEL_MODES,
   createInitialFormValues,
   sumEstimatedHeads,
+  tripKindOf,
   type TravelRequestFormValues,
+  type TripKind,
 } from "@/features/travel-requests/formModel";
 import { useCreateTravelRequest } from "@/features/travel-requests/useCreateTravelRequest";
-import { formatAmount, formatMoneyInput, maxAdvanceFor } from "@/lib/money";
-import { formatDecision, formatRequestStatus } from "@/lib/statusLabels";
+import { useIndianCities } from "@/lib/cities";
+import {
+  formatAmount,
+  formatAmountValue,
+  formatMoneyInput,
+  maxAdvanceFor,
+  parseMoney,
+} from "@/lib/money";
+import { previewSteps } from "@/lib/tripProgress";
+import {
+  DESTINATION_MAX,
+  MAX_DAYS_IN_ADVANCE,
+  MAX_TRIP_DAYS,
+  PURPOSE_MAX,
+} from "@/lib/validation";
+import { addDays, todayIso, tripDays } from "@/lib/dates";
+import { plural } from "@/lib/text";
 
-const CATEGORY_OPTIONS = TRAVEL_CATEGORIES.map((category) => ({
-  value: category,
-  label: category,
-}));
-
-const MODE_OPTIONS = TRAVEL_MODES.map((mode) => ({
-  value: mode,
-  label: mode,
-}));
-
-/** Local calendar date as YYYY-MM-DD (no past selection for travel dates). */
-function todayIso(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+const CATEGORY_OPTIONS = toOptions(DOMESTIC_CATEGORIES);
+const MODE_OPTIONS = toOptions(TRAVEL_MODES);
 
 interface TravelRequestFormProps {
+  /** Claim type for a new request; edits derive it from the saved category. */
+  kind?: TripKind;
   editId?: string;
   initialValues?: TravelRequestFormValues;
 }
 
 export function TravelRequestForm({
+  kind,
   editId,
   initialValues,
 }: TravelRequestFormProps) {
+  // No past travel dates; plan at most a year ahead
   const today = todayIso();
+  const latestStart = addDays(today, MAX_DAYS_IN_ADVANCE);
   const [values, setValues] = useState<TravelRequestFormValues>(
-    () => initialValues ?? createInitialFormValues(),
+    () => initialValues ?? createInitialFormValues(kind),
   );
-  const { submitting, errors, apiError, created, submit, clearFeedback, reset } =
+  const tripKind = kind ?? tripKindOf(values.travel_category);
+  const isDomestic = tripKind === "domestic";
+  const cities = useIndianCities(isDomestic);
+  // On success the hook opens the request page with a toast
+  const { submitting, errors, apiError, submit, clearFeedback } =
     useCreateTravelRequest(editId);
+  const { confirm, dialog } = useConfirm();
+
+  // "6 days" once both dates are picked
+  const tripLength =
+    values.start_date && values.end_date && values.end_date >= values.start_date
+      ? plural(tripDays(values.start_date, values.end_date), "day")
+      : undefined;
 
   const estimatedCost = sumEstimatedHeads(values.estimated_heads);
+  const companyPaid = sumEstimatedHeads(values.estimated_heads, "Company");
   const maxAdvance = maxAdvanceFor(
     Number.isFinite(estimatedCost) ? estimatedCost : 0,
   );
+
+  // Last check before the request goes to approvers
+  function confirmSubmit() {
+    const advance = parseMoney(values.advance_requested);
+    return confirm({
+      title: `Submit this ${tripKind} travel request?`,
+      body: (
+        <>
+          ₹{formatAmountValue(estimatedCost)} is estimated
+          {advance > 0 ? <>, with a ₹{formatAmountValue(advance)} advance</> : null}.
+          A request number is issued and it heads into the approval chain, so
+          your approvers are notified straight away. You can't edit it after
+          submitting.
+        </>
+      ),
+      confirmLabel: "Submit request",
+    });
+  }
 
   function patch<K extends keyof TravelRequestFormValues>(
     key: K,
@@ -78,64 +118,37 @@ export function TravelRequestForm({
     }));
   }
 
-  function startAnother() {
-    reset();
-    setValues(createInitialFormValues());
-  }
-
-  if (created) {
-    return (
-      <div className="flex flex-col gap-6">
-        <Alert tone="success" title="Travel request created">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <p>
-              ID <strong>{created.travel_request_id}</strong>
-            </p>
-            <span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold text-teal-900">
-              {formatRequestStatus(created.status)}
-            </span>
-          </div>
-          {created.approvals.length > 0 ? (
-            <ul className="mt-3 list-disc pl-5">
-              {created.approvals.map((step) => (
-                <li key={step.id}>
-                  Level {step.level}: {step.role_required} —{" "}
-                  {formatDecision(step.decision)}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2">Saved as draft.</p>
-          )}
-        </Alert>
-
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <Button type="button" variant="secondary" onClick={startAnother}>
-            Create another
-          </Button>
-          <Link
-            to={`/travel-requests/${created.travel_request_id}`}
-            className="inline-flex items-center justify-center rounded-md bg-teal-800 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-teal-900"
-          >
-            View request
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <form
       className="flex flex-col gap-8"
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void submit(values, true);
+        // Ignore double submits while a save is in flight
+        if (submitting) return;
+        void submit(values, true, confirmSubmit);
       }}
     >
+      {/* What happens after you submit (new requests only) */}
+      {!editId ? (
+        <TripProgress
+          steps={previewSteps()}
+          title="What happens after you submit"
+          hideSummary
+        />
+      ) : null}
+
       {apiError ? (
-        <Alert tone="error" title="Could not create request">
-          {apiError}
+        <Alert tone="error" title="Could not save request">
+          {apiError.includes("\n") ? (
+            <ul className="list-disc pl-5">
+              {apiError.split("\n").map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            apiError
+          )}
         </Alert>
       ) : null}
 
@@ -150,16 +163,31 @@ export function TravelRequestForm({
             id="start_date"
             value={values.start_date}
             min={today}
-            max={values.end_date || undefined}
+            max={
+              values.end_date && values.end_date < latestStart
+                ? values.end_date
+                : latestStart
+            }
             placeholder="Select start date"
             onChange={(value) => patch("start_date", value)}
           />
         </Field>
-        <Field id="end_date" label="To date" required error={errors.end_date}>
+        <Field
+          id="end_date"
+          label="To date"
+          required
+          hint={tripLength}
+          error={errors.end_date}
+        >
           <DatePicker
             id="end_date"
             value={values.end_date}
             min={values.start_date || today}
+            max={
+              values.start_date
+                ? addDays(values.start_date, MAX_TRIP_DAYS - 1)
+                : undefined
+            }
             placeholder="Select end date"
             onChange={(value) => patch("end_date", value)}
           />
@@ -170,46 +198,69 @@ export function TravelRequestForm({
           required
           error={errors.destination}
         >
-          <Input
-            id="destination"
-            value={values.destination}
-            onChange={(event) => patch("destination", event.target.value)}
-            placeholder="City or location"
-            required
-          />
+          {/* Domestic: search Indian cities; international: free text */}
+          {isDomestic ? (
+            <Combobox
+              id="destination"
+              value={values.destination}
+              options={cities}
+              onChange={(value) => patch("destination", value)}
+              placeholder="Search a city"
+              maxLength={DESTINATION_MAX}
+            />
+          ) : (
+            <Input
+              id="destination"
+              value={values.destination}
+              onChange={(event) => patch("destination", event.target.value)}
+              placeholder="City, Country"
+              maxLength={DESTINATION_MAX}
+              autoComplete="off"
+              required
+            />
+          )}
         </Field>
         <Field
           id="currency"
           label="Currency"
           required
+          hint={isDomestic ? "Domestic trips are in INR" : undefined}
           error={errors.currency}
         >
+          {/* Domestic trips are always INR */}
           <Input
             id="currency"
             value={values.currency}
-            onChange={(event) => patch("currency", event.target.value)}
-            maxLength={8}
+            onChange={(event) =>
+              patch("currency", event.target.value.toUpperCase())
+            }
+            maxLength={3}
+            readOnly={isDomestic}
+            className={isDomestic ? "cursor-default bg-slate-50 text-slate-700" : ""}
             required
           />
         </Field>
-        <Field
-          id="travel_category"
-          label="Travel category"
-          required
-          error={errors.travel_category}
-        >
-          <SelectMenu
+        {/* City tier only applies within India */}
+        {isDomestic ? (
+          <Field
             id="travel_category"
-            value={values.travel_category}
-            options={CATEGORY_OPTIONS}
-            onChange={(value) =>
-              patch(
-                "travel_category",
-                value as TravelRequestFormValues["travel_category"],
-              )
-            }
-          />
-        </Field>
+            label="Travel category"
+            required
+            error={errors.travel_category}
+          >
+            <SelectMenu
+              id="travel_category"
+              value={values.travel_category}
+              options={CATEGORY_OPTIONS}
+              onChange={(value) =>
+                patch(
+                  "travel_category",
+                  value as TravelRequestFormValues["travel_category"],
+                )
+              }
+            />
+          </Field>
+        ) : null}
         <Field
           id="travel_mode"
           label="Travel mode"
@@ -230,12 +281,19 @@ export function TravelRequestForm({
         </Field>
       </section>
 
-      <Field id="purpose" label="Purpose" required error={errors.purpose}>
+      <Field
+        id="purpose"
+        label="Purpose"
+        required
+        hint={`${values.purpose.trim().length}/${PURPOSE_MAX} characters`}
+        error={errors.purpose}
+      >
         <TextArea
           id="purpose"
           value={values.purpose}
           onChange={(event) => patch("purpose", event.target.value)}
-          placeholder="Purpose of the travel"
+          placeholder="e.g. Business visit to meet client"
+          maxLength={PURPOSE_MAX}
           required
         />
       </Field>
@@ -251,6 +309,11 @@ export function TravelRequestForm({
           id="estimated_cost"
           label="Total estimated cost"
           required
+          hint={
+            companyPaid > 0
+              ? `Employee-paid heads only · ₹${formatAmount(companyPaid)} Company-paid not included`
+              : "Employee-paid heads only"
+          }
           error={errors.estimated_cost}
         >
           <Input
@@ -266,7 +329,7 @@ export function TravelRequestForm({
           id="advance_requested"
           label="Advance requested"
           required
-          hint={`Up to 60% of estimate (max ₹${formatAmount(maxAdvance)})`}
+          hint={`Up to ${MAX_ADVANCE_PERCENT} of estimate (max ₹${formatAmount(maxAdvance)})`}
           error={errors.advance_requested}
         >
           <Input
@@ -294,6 +357,9 @@ export function TravelRequestForm({
           {submitting ? "Submitting…" : "Submit"}
         </Button>
       </div>
+
+      {/* submit confirmation popup */}
+      {dialog}
     </form>
   );
 }

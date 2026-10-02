@@ -9,6 +9,7 @@ from database.postgres.models.employee import Employee
 from database.postgres.session import get_db
 from src.settlements.schemas import SettlementRead, SettlementSave
 from src.settlements.service import SettlementService
+from src.travel_requests.schemas import FinanceRemarksRequest
 
 router = APIRouter(prefix="/travel-requests", tags=["settlements"])
 
@@ -53,3 +54,19 @@ def mark_settlement_paid(
     ],
 ) -> SettlementRead:
     return SettlementService(db).mark_paid(employee, travel_request_id)
+
+
+@router.post(
+    "/{travel_request_id}/settlement/return",
+    response_model=SettlementRead,
+    summary="Send an approved settlement back to the employee (Finance)",
+)
+def return_settlement(
+    travel_request_id: str,
+    payload: FinanceRemarksRequest,
+    db: Annotated[Session, Depends(get_db)],
+    employee: Annotated[
+        Employee, Depends(require_capability(Capability.RELEASE_FUNDS))
+    ],
+) -> SettlementRead:
+    return SettlementService(db).return_to_employee(employee, travel_request_id, payload)

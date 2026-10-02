@@ -20,7 +20,15 @@ class AppException(Exception):
         super().__init__(message)
 
 
-async def app_exception_handler(_request: Request, exc: AppException) -> JSONResponse:
+def not_found(sub_status_code: str, message: str) -> AppException:
+    return AppException(status_code=404, sub_status_code=sub_status_code, message=message)
+
+
+def forbidden(message: str) -> AppException:
+    return AppException(status_code=403, sub_status_code="forbidden", message=message)
+
+
+def error_response(exc: AppException) -> JSONResponse:
     # Return a consistent error envelope for known business failures
     body: dict = {
         "sub_status_code": exc.sub_status_code,
@@ -29,3 +37,7 @@ async def app_exception_handler(_request: Request, exc: AppException) -> JSONRes
     if exc.details is not None:
         body["details"] = exc.details
     return JSONResponse(status_code=exc.status_code, content=body)
+
+
+async def app_exception_handler(_request: Request, exc: AppException) -> JSONResponse:
+    return error_response(exc)

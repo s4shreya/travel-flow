@@ -9,30 +9,16 @@ export interface AppNotification {
   created_at: string;
 }
 
-export function listNotifications(
-  employeeCode: string,
-): Promise<AppNotification[]> {
-  return apiFetch<AppNotification[]>("/api/notifications", {
-    method: "GET",
-    employeeCode,
-  });
+export function listNotifications(): Promise<AppNotification[]> {
+  return apiFetch<AppNotification[]>("/api/notifications");
 }
 
-export function markNotificationRead(
-  employeeCode: string,
-  notificationId: number,
-): Promise<AppNotification> {
-  return apiFetch<AppNotification>(
-    `/api/notifications/${notificationId}/read`,
-    { method: "POST", employeeCode },
-  );
-}
-
-export function markAllNotificationsRead(
-  employeeCode: string,
-): Promise<AppNotification[]> {
-  return apiFetch<AppNotification[]>("/api/notifications/read-all", {
+export function markNotificationRead(notificationId: number): Promise<AppNotification> {
+  return apiFetch<AppNotification>(`/api/notifications/${notificationId}/read`, {
     method: "POST",
-    employeeCode,
   });
+}
+
+export function markAllNotificationsRead(): Promise<AppNotification[]> {
+  return apiFetch<AppNotification[]>("/api/notifications/read-all", { method: "POST" });
 }

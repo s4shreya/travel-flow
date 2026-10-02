@@ -1,5 +1,7 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+import { floatingStyle, useFloatingPosition } from "@/hooks/useFloatingPosition";
 
 export interface SelectOption {
   value: string;
@@ -18,13 +20,8 @@ interface SelectMenuProps {
 const triggerClass =
   "flex w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-left text-sm text-slate-900 outline-none transition hover:border-teal-700/50 focus-visible:border-teal-700 focus-visible:ring-2 focus-visible:ring-teal-700/20 disabled:cursor-not-allowed disabled:bg-slate-50";
 
-interface MenuPosition {
-  top: number;
-  left: number;
-  width: number;
-  maxHeight: number;
-  openUp: boolean;
-}
+// Tallest the option list grows before it scrolls
+const MENU_MAX_HEIGHT = 240;
 
 export function SelectMenu({
   id,
@@ -35,39 +32,13 @@ export function SelectMenu({
   onChange,
 }: SelectMenuProps) {
   const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
   const selected = options.find((option) => option.value === value);
-
-  function updateMenuPosition() {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const gap = 6;
-    const spaceBelow = window.innerHeight - rect.bottom - gap;
-    const spaceAbove = rect.top - gap;
-    const preferred = 240;
-    const openUp = spaceBelow < Math.min(preferred, 160) && spaceAbove > spaceBelow;
-    const maxHeight = Math.min(preferred, openUp ? spaceAbove : spaceBelow);
-    setMenuPos({
-      top: openUp ? rect.top - gap : rect.bottom + gap,
-      left: rect.left,
-      width: rect.width,
-      maxHeight: Math.max(maxHeight, 120),
-      openUp,
-    });
-  }
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setMenuPos(null);
-      return;
-    }
-    updateMenuPosition();
-  }, [open]);
+  // Portal + fixed position so modals / tables never clip the menu
+  const menuPos = useFloatingPosition(triggerRef, open, { preferredHeight: MENU_MAX_HEIGHT });
 
   useEffect(() => {
     if (!open) return;
@@ -79,22 +50,17 @@ export function SelectMenu({
       setOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    function onReposition() {
-      updateMenuPosition();
+      if (event.key !== "Escape") return;
+      // Close only the menu, not a modal around it
+      event.stopPropagation();
+      setOpen(false);
     }
 
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", onReposition);
-    // Capture scroll from nested overflow containers (settlement tables)
-    window.addEventListener("scroll", onReposition, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onReposition);
-      window.removeEventListener("scroll", onReposition, true);
     };
   }, [open]);
 
@@ -129,15 +95,8 @@ export function SelectMenu({
               id={listId}
               role="listbox"
               aria-labelledby={id}
-              className="fixed z-[200] overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in"
-              style={{
-                left: menuPos.left,
-                width: menuPos.width,
-                maxHeight: menuPos.maxHeight,
-                ...(menuPos.openUp
-                  ? { bottom: window.innerHeight - menuPos.top }
-                  : { top: menuPos.top }),
-              }}
+              className="fixed z-200 overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in"
+              style={floatingStyle(menuPos)}
             >
               {options.map((option) => {
                 const isSelected = option.value === value;

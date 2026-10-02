@@ -1,130 +1,141 @@
 import { useState } from "react";
 
-import { decideApproval } from "@/api/approvals";
+import {
+  decideApproval,
+  type ApprovalDecisionInput,
+  type ApprovalKind,
+} from "@/api/approvals";
 import { Button } from "@/components/ui/Button";
-import { Field, TextArea } from "@/components/ui/Field";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { TextArea } from "@/components/ui/Field";
+import { errorMessage } from "@/lib/errors";
+import { formatRupees } from "@/lib/money";
+import { REMARKS_MAX } from "@/lib/validation";
 
 interface DecisionActionsProps {
-  employeeCode: string;
   approvalId: number;
-  kind: "travel_request" | "settlement";
+  kind: ApprovalKind;
+  /** Stage being decided, e.g. "Trip approval". */
+  stage: string;
+  /** Amount being decided at this step. */
+  amount: number;
   busy: boolean;
   onBusy: (busy: boolean) => void;
-  onDone: (decision: "approved" | "returned" | "rejected") => void;
+  onDone: (decision: ApprovalDecisionInput) => void;
   onError: (message: string) => void;
 }
 
-/** Approve / Return / Reject for the current pending approval step. */
+interface DialogCopy {
+  title: string;
+  body: string;
+  confirm: string;
+  /** Remarks box placeholder; no box when omitted. */
+  placeholder?: string;
+  required?: boolean;
+}
+
+// Confirmation copy per decision
+function dialogCopy(decision: ApprovalDecisionInput, kind: ApprovalKind, stage: string, amount: number): DialogCopy {
+  switch (decision) {
+    case "approved":
+      return {
+        title: `Approve — ${stage}?`,
+        // a settlement has one Finance review; trips go up the approval matrix
+        body:
+          kind === "settlement"
+            ? `${formatRupees(amount)} is approved. The claim moves to Payments for payout or payroll recovery.`
+            : `${formatRupees(amount)} is approved at this step. It moves to the next approver, or to Finance if this was the last level.`,
+        confirm: `Approve ${stage.toLowerCase()}`,
+      };
+    case "returned":
+      return {
+        title: "Send back for changes?",
+        body: "The employee can edit and submit again. Tell them what to fix.",
+        confirm: "Send back",
+        placeholder: "What should be corrected?",
+        required: true,
+      };
+    case "rejected":
+      return {
+        title: "Reject this request?",
+        body: "This ends the request. The employee is notified with your comments.",
+        confirm: "Reject",
+        placeholder: "Why is this being rejected?",
+        required: true,
+      };
+  }
+}
+
+/** Send back / Reject / Approve for the current pending approval step; each asks to confirm. */
 export function DecisionActions({
-  employeeCode,
   approvalId,
   kind,
+  stage,
+  amount,
   busy,
   onBusy,
   onDone,
   onError,
 }: DecisionActionsProps) {
-  const [returnOpen, setReturnOpen] = useState(false);
+  const [dialogFor, setDialogFor] = useState<ApprovalDecisionInput | null>(null);
   const [remarks, setRemarks] = useState("");
-  const [remarksError, setRemarksError] = useState<string | null>(null);
 
-  async function decide(
-    decision: "approved" | "returned" | "rejected",
-    note?: string,
-  ) {
-    if (decision === "returned" && !remarks.trim()) {
-      setRemarksError("Remarks are required when returning");
-      return;
-    }
+  function closeDialog() {
+    setDialogFor(null);
+    setRemarks("");
+  }
+
+  async function decide(decision: ApprovalDecisionInput, note?: string) {
     onBusy(true);
     onError("");
-    setRemarksError(null);
     try {
-      await decideApproval(employeeCode, approvalId, decision, note, kind);
-      setReturnOpen(false);
-      setRemarks("");
+      await decideApproval(approvalId, decision, note?.trim() || undefined, kind);
+      closeDialog();
       onDone(decision);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Decision failed");
+      onError(errorMessage(err, "Decision failed"));
     } finally {
       onBusy(false);
     }
   }
 
-  return (
-    <div className="">
+  const dialog = dialogFor ? dialogCopy(dialogFor, kind, stage, amount) : null;
 
-      {returnOpen ? (
-        <div className="mt-3">
-          
-          <div className="mt-3">
-            <Field
-              id="return-remarks"
-              label="Remarks"
-              required
-              error={remarksError ?? undefined}
-            >
-              <TextArea
-                id="return-remarks"
-                value={remarks}
-                placeholder="What should be corrected?"
-                onChange={(event) => {
-                  setRemarksError(null);
-                  setRemarks(event.target.value);
-                }}
-              />
-            </Field>
-          </div>
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <Button
-              disabled={busy}
-              onClick={() => void decide("returned", remarks)}
-            >
-              Confirm return
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => {
-                setReturnOpen(false);
-                setRemarks("");
-                setRemarksError(null);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button disabled={busy} onClick={() => void decide("approved")}>
-            Approve
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => setReturnOpen(true)}
-          >
-            Return
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void decide("rejected")}
-          >
-            Reject
-          </Button>
-        </div>
-      )}
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="secondary" disabled={busy} onClick={() => setDialogFor("returned")}>
+        Send back
+      </Button>
+      <Button variant="danger" disabled={busy} onClick={() => setDialogFor("rejected")}>
+        Reject
+      </Button>
+      <Button disabled={busy} onClick={() => setDialogFor("approved")}>
+        Approve · {stage}
+      </Button>
+
+      {dialogFor && dialog ? (
+        <ConfirmDialog
+          title={dialog.title}
+          body={dialog.body}
+          confirmLabel={busy ? "Saving…" : dialog.confirm}
+          cancelLabel="Not yet"
+          confirmVariant={dialogFor === "rejected" ? "danger" : "primary"}
+          // Comments are mandatory when sending back or rejecting
+          confirmDisabled={busy || (!!dialog.required && !remarks.trim())}
+          onCancel={closeDialog}
+          onConfirm={() => void decide(dialogFor, remarks)}
+        >
+          {dialog.placeholder ? (
+            <TextArea
+              aria-label="Comments"
+              maxLength={REMARKS_MAX}
+              value={remarks}
+              placeholder={dialog.placeholder}
+              onChange={(event) => setRemarks(event.target.value)}
+            />
+          ) : null}
+        </ConfirmDialog>
+      ) : null}
     </div>
   );
-}
-
-/** First pending step assigned to this employee (sequential chain). */
-export function currentPendingForEmployee<
-  T extends { decision: string; approver_id: number | null },
->(approvals: T[], employeeId: number): T | null {
-  const pending = approvals.find((step) => step.decision === "pending");
-  if (!pending || pending.approver_id !== employeeId) return null;
-  return pending;
 }

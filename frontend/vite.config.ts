@@ -9,9 +9,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
+      "@docs": path.resolve(import.meta.dirname, "../docs"),
     },
   },
   server: {
+    fs: {
+      allow: [".", "../docs"],
+    },
     // Proxy API calls to FastAPI during local development
     proxy: {
       "/api": {

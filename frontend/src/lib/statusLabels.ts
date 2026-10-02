@@ -15,9 +15,7 @@ const REQUEST_STATUS_LABELS: Record<TravelRequestStatus, string> = {
 
 const SETTLEMENT_STATUS_LABELS: Record<string, string> = {
   draft: "Settlement draft",
-  submitted: "Settlement submitted",
   returned: "Settlement returned",
-  in_approval: "Settlement pending approval",
   finance_review: "Settlement with Finance",
   queued_for_payment: "Awaiting fund release",
   paid: "Funds released / recovered",

@@ -2,9 +2,7 @@ import { apiFetch } from "@/api/client";
 
 export type SettlementStatus =
   | "draft"
-  | "submitted"
   | "returned"
-  | "in_approval"
   | "finance_review"
   | "queued_for_payment"
   | "paid"
@@ -28,6 +26,9 @@ export interface SettlementExpense {
   mode?: string | null;
   head?: string | null;
   description?: string | null;
+  /** Policy deduction on this line; settlement disallowed total is their sum. */
+  disallowed_amount?: string;
+  disallow_reason?: string | null;
 }
 
 export interface SettlementApproval {
@@ -35,6 +36,7 @@ export interface SettlementApproval {
   level: number;
   role_required: string;
   approver_id: number | null;
+  approver_name: string | null;
   decision: string;
   remarks: string | null;
   decided_at: string | null;
@@ -63,37 +65,39 @@ export interface Settlement {
 export interface SettlementSavePayload {
   settlement_date?: string | null;
   expenses: SettlementExpense[];
-  disallowed_total: string;
   submit: boolean;
 }
 
-export function getSettlement(
-  employeeCode: string,
-  travelRequestId: string,
-): Promise<Settlement | null> {
-  return apiFetch<Settlement | null>(
-    `/api/travel-requests/${travelRequestId}/settlement`,
-    { method: "GET", employeeCode },
-  );
+const settlementPath = (travelRequestId: string) =>
+  `/api/travel-requests/${travelRequestId}/settlement`;
+
+export function getSettlement(travelRequestId: string): Promise<Settlement | null> {
+  return apiFetch<Settlement | null>(settlementPath(travelRequestId));
 }
 
 export function saveSettlement(
-  employeeCode: string,
   travelRequestId: string,
   payload: SettlementSavePayload,
 ): Promise<Settlement> {
-  return apiFetch<Settlement>(
-    `/api/travel-requests/${travelRequestId}/settlement`,
-    { method: "PUT", employeeCode, body: payload },
-  );
+  return apiFetch<Settlement>(settlementPath(travelRequestId), {
+    method: "PUT",
+    body: payload,
+  });
 }
 
-export function markSettlementPaid(
-  employeeCode: string,
+export function markSettlementPaid(travelRequestId: string): Promise<Settlement> {
+  return apiFetch<Settlement>(`${settlementPath(travelRequestId)}/mark-paid`, {
+    method: "POST",
+  });
+}
+
+/** Finance sends an approved settlement back to the employee (reason required). */
+export function returnSettlement(
   travelRequestId: string,
+  remarks: string,
 ): Promise<Settlement> {
-  return apiFetch<Settlement>(
-    `/api/travel-requests/${travelRequestId}/settlement/mark-paid`,
-    { method: "POST", employeeCode },
-  );
+  return apiFetch<Settlement>(`${settlementPath(travelRequestId)}/return`, {
+    method: "POST",
+    body: { remarks },
+  });
 }

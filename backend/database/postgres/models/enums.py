@@ -19,6 +19,7 @@ class EmployeeRole(StrEnum):
     HEAD_OF_DIVISION = "Head of Division"
     FINANCE = "Finance"
     MD = "MD"
+    ADMIN = "Admin"
 
 
 class TravelRequestStatus(StrEnum):
@@ -28,6 +29,15 @@ class TravelRequestStatus(StrEnum):
     IN_SETTLEMENT = "in_settlement"
     CLOSED = "closed"
 
+
+# Trips still moving through the flow (not draft, not closed)
+OPEN_TRIP_STATUSES = frozenset(
+    {
+        TravelRequestStatus.PENDING_APPROVAL,
+        TravelRequestStatus.APPROVED,
+        TravelRequestStatus.IN_SETTLEMENT,
+    }
+)
 
 class TravelCategory(StrEnum):
     DOMESTIC_TIER_1 = "Domestic - Tier 1"
@@ -43,15 +53,12 @@ class TravelMode(StrEnum):
     OTHER = "Other"
 
 
-# Roles allowed on an approval step
-APPROVER_ROLES = frozenset(
-    {
-        EmployeeRole.REPORTING_MANAGER,
-        EmployeeRole.HEAD_OF_DEPARTMENT,
-        EmployeeRole.HEAD_OF_DIVISION,
-        EmployeeRole.FINANCE,
-        EmployeeRole.MD,
-    }
+# Business approval levels
+APPROVAL_LEVELS = (
+    EmployeeRole.REPORTING_MANAGER,
+    EmployeeRole.HEAD_OF_DEPARTMENT,
+    EmployeeRole.HEAD_OF_DIVISION,
+    EmployeeRole.MD,
 )
 
 
@@ -65,13 +72,34 @@ class ApprovalDecision(StrEnum):
 
 class SettlementStatus(StrEnum):
     DRAFT = "draft"
-    SUBMITTED = "submitted"
     RETURNED = "returned"
-    IN_APPROVAL = "in_approval"
     FINANCE_REVIEW = "finance_review"
     QUEUED_FOR_PAYMENT = "queued_for_payment"
     PAID = "paid"
     RECOVERABLE = "recoverable"
+
+
+# Submitted to Finance (counts as a claim); draft / returned are still with the employee
+SUBMITTED_SETTLEMENT_STATUSES = frozenset(
+    {
+        SettlementStatus.FINANCE_REVIEW,
+        SettlementStatus.QUEUED_FOR_PAYMENT,
+        SettlementStatus.RECOVERABLE,
+        SettlementStatus.PAID,
+    }
+)
+# Finance has approved the amounts
+APPROVED_SETTLEMENT_STATUSES = frozenset(
+    {
+        SettlementStatus.QUEUED_FOR_PAYMENT,
+        SettlementStatus.RECOVERABLE,
+        SettlementStatus.PAID,
+    }
+)
+# Waiting on Finance to pay out or note a payroll recovery
+PAYMENT_DUE_STATUSES = frozenset(
+    {SettlementStatus.QUEUED_FOR_PAYMENT, SettlementStatus.RECOVERABLE}
+)
 
 
 class ExpenseSection(StrEnum):

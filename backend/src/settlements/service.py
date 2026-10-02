@@ -1,17 +1,16 @@
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from core.exceptions import AppException
+from core.exceptions import AppException, forbidden, not_found
 from database.postgres.crud.employee import EmployeeCRUD
 from database.postgres.models.employee import Employee
 from database.postgres.models.enums import (
+    PAYMENT_DUE_STATUSES,
     ApprovalDecision,
     EmployeeRole,
     ExpenseSection,
-    PaidBy,
     SettlementStatus,
     TravelRequestStatus,
 )
@@ -25,12 +24,27 @@ from database.postgres.models.travel_expense import (
 from database.postgres.models.travel_receipt import TravelReceipt
 from database.postgres.models.travel_request import TravelRequest
 from database.postgres.models.travel_settlement import TravelSettlement
+from src.notifications.service import (
+    add_notification,
+    notify_current_approver,
+    notify_settlement_closed,
+    settlement_href,
+)
 from src.settlements.schemas import SettlementExpenseIn, SettlementRead, SettlementSave
-from src.travel_requests.advance_side_effects import notify_settlement_funds_released
-from src.travel_requests.approval_matrix import build_request_approval_plan
-from src.travel_requests.service import TravelRequestService
+from src.settlements.totals import ZERO, recompute_settlement_totals
+from src.travel_requests.desk_bookings import is_desk_line
+from src.travel_requests.schemas import FinanceRemarksRequest
+from src.travel_requests.service import (
+    TravelRequestService,
+    assert_not_own_trip,
+    assert_settlement_open,
+)
 
-DESK_PROOF_REFS = frozenset({"DESK-FLIGHT", "DESK-HOTEL"})
+# Allow one travel day before / after the trip window
+TRIP_DATE_BUFFER_DAYS = 1
+
+# Settlement states the employee can still edit
+_EDITABLE_STATUSES = frozenset({SettlementStatus.DRAFT, SettlementStatus.RETURNED})
 
 
 class SettlementService:
@@ -46,18 +60,6 @@ class SettlementService:
         settlement = self._load_for_trip(trip.id)
         if settlement is None:
             return None
-        # Travel-desk flight/hotel are always company-paid
-        changed = False
-        for exp in settlement.expenses:
-            if exp.proof_ref in {"DESK-FLIGHT", "DESK-HOTEL"} and exp.paid_by != PaidBy.COMPANY:
-                exp.paid_by = PaidBy.COMPANY
-                changed = True
-        if changed:
-            self._recompute(settlement, trip)
-            self.db.add(settlement)
-            self.db.commit()
-            settlement = self._load_for_trip(trip.id)
-            assert settlement is not None
         return self._to_read(settlement, trip.travel_request_id)
 
     def save(
@@ -66,58 +68,30 @@ class SettlementService:
         travel_request_id: str,
         payload: SettlementSave,
     ) -> SettlementRead:
-        trip = self.trips.get_for_viewer(employee, travel_request_id)
-        if trip.employee_id != employee.id:
-            raise AppException(
-                status_code=403,
-                sub_status_code="forbidden",
-                message="Only the requester can edit the settlement",
-            )
-        if trip.status not in {
-            TravelRequestStatus.APPROVED,
-            TravelRequestStatus.IN_SETTLEMENT,
-        }:
-            raise AppException(
-                status_code=422,
-                sub_status_code="settlement_not_allowed",
-                message="Settlement is only available after the travel request is approved",
-            )
+        trip, settlement = self._load_editable(employee, travel_request_id)
 
-        settlement = self._load_for_trip(trip.id)
-        if settlement is None:
-            settlement = TravelSettlement(travel_request_id=trip.id)
-            self.db.add(settlement)
-            self.db.flush()
-        elif settlement.status not in {
-            SettlementStatus.DRAFT,
-            SettlementStatus.RETURNED,
-        }:
-            raise AppException(
-                status_code=422,
-                sub_status_code="settlement_locked",
-                message="This settlement can no longer be edited",
-            )
+        desk_lines = [exp for exp in settlement.expenses if is_desk_line(exp.proof_ref)]
+        claim_lines = [line for line in payload.expenses if not is_desk_line(line.proof_ref)]
 
-        # Replace expense lines — proofs must belong to this travel request
-        settlement.expenses.clear()
+        # One receipt can back only one claim line
+        self._assert_unique_proofs([line.proof_ref for line in claim_lines])
+
+        # Replace the employee's lines
+        settlement.expenses[:] = desk_lines
         self.db.flush()
-        for line in payload.expenses:
+        for line in claim_lines:
             self._assert_proof_for_trip(trip, line.proof_ref)
+            self._assert_within_trip(trip, line)
             settlement.expenses.append(self._build_expense(line))
 
-        self._recompute(settlement, trip, disallowed_override=payload.disallowed_total)
+        recompute_settlement_totals(settlement, trip)
         settlement.settlement_date = payload.settlement_date or date.today()
         settlement.status = SettlementStatus.DRAFT
 
         if payload.submit:
             self._submit(settlement, trip, employee)
 
-        self.db.add(settlement)
-        self.db.add(trip)
-        self.db.commit()
-        loaded = self._load_for_trip(trip.id)
-        assert loaded is not None
-        return self._to_read(loaded, trip.travel_request_id)
+        return self._commit(settlement, trip)
 
     def append_expense(
         self,
@@ -126,93 +100,106 @@ class SettlementService:
         line: SettlementExpenseIn,
     ) -> SettlementRead:
         """Add one confirmed receipt line onto the settlement draft."""
+        trip, settlement = self._load_editable(employee, travel_request_id)
+
+        self._assert_unique_proofs(
+            [exp.proof_ref for exp in settlement.expenses] + [line.proof_ref]
+        )
+        self._assert_proof_for_trip(trip, line.proof_ref)
+        self._assert_within_trip(trip, line)
+        settlement.expenses.append(self._build_expense(line))
+        recompute_settlement_totals(settlement, trip)
+        settlement.settlement_date = settlement.settlement_date or date.today()
+        settlement.status = SettlementStatus.DRAFT
+        return self._commit(settlement, trip)
+
+    def return_to_employee(
+        self, employee: Employee, travel_request_id: str, payload: FinanceRemarksRequest
+    ) -> SettlementRead:
+        # Finance sends the claim back for correction (same as an approver return)
+        trip, settlement = self._load_for_finance(employee, travel_request_id)
+        settlement.status = SettlementStatus.RETURNED
+        trip.status = TravelRequestStatus.APPROVED
+        # Record the return on the chain so the employee sees who and why
+        settlement.approvals.append(
+            TravelSettlementApproval(
+                level=len(settlement.approvals) + 1,
+                role_required=EmployeeRole.FINANCE,
+                approver_id=employee.id,
+                decision=ApprovalDecision.RETURNED,
+                remarks=payload.remarks,
+                decided_at=datetime.now(timezone.utc),
+            )
+        )
+        add_notification(
+            self.db,
+            employee_id=trip.employee_id,
+            title="Settlement returned by Finance",
+            body=(
+                f"{trip.travel_request_id} was returned by {employee.name}. "
+                f'Remarks: "{payload.remarks}". Update your expenses and submit again.'
+            ),
+            href=settlement_href(trip),
+        )
+        return self._commit(settlement, trip)
+
+    def mark_paid(
+        self, employee: Employee, travel_request_id: str
+    ) -> SettlementRead:
+        # Finance marks payment / recovery complete
+        trip, settlement = self._load_for_finance(employee, travel_request_id)
+        settlement.status = SettlementStatus.PAID
+        trip.status = TravelRequestStatus.CLOSED
+        # Notify the requester (not Finance)
+        notify_settlement_closed(
+            self.db,
+            trip,
+            amount_payable=settlement.amount_payable or ZERO,
+            amount_recoverable=settlement.amount_recoverable or ZERO,
+        )
+        return self._commit(settlement, trip)
+
+    def _load_editable(
+        self, employee: Employee, travel_request_id: str
+    ) -> tuple[TravelRequest, TravelSettlement]:
+        """Requester's own approved trip + its settlement (created on first save), still editable."""
         trip = self.trips.get_for_viewer(employee, travel_request_id)
         if trip.employee_id != employee.id:
-            raise AppException(
-                status_code=403,
-                sub_status_code="forbidden",
-                message="Only the requester can edit the settlement",
-            )
-        if trip.status not in {
-            TravelRequestStatus.APPROVED,
-            TravelRequestStatus.IN_SETTLEMENT,
-        }:
-            raise AppException(
-                status_code=422,
-                sub_status_code="settlement_not_allowed",
-                message="Settlement is only available after the travel request is approved",
-            )
+            raise forbidden("Only the requester can edit the settlement")
+        assert_settlement_open(trip)
 
         settlement = self._load_for_trip(trip.id)
         if settlement is None:
             settlement = TravelSettlement(travel_request_id=trip.id)
             self.db.add(settlement)
             self.db.flush()
-        elif settlement.status not in {
-            SettlementStatus.DRAFT,
-            SettlementStatus.RETURNED,
-        }:
+        elif settlement.status not in _EDITABLE_STATUSES:
             raise AppException(
                 status_code=422,
                 sub_status_code="settlement_locked",
                 message="This settlement can no longer be edited",
             )
+        return trip, settlement
 
-        self._assert_proof_for_trip(trip, line.proof_ref)
-        settlement.expenses.append(self._build_expense(line))
-        self._recompute(
-            settlement,
-            trip,
-            disallowed_override=settlement.disallowed_total or Decimal("0"),
-        )
-        settlement.settlement_date = settlement.settlement_date or date.today()
-        settlement.status = SettlementStatus.DRAFT
-        self.db.add(settlement)
-        self.db.commit()
-        loaded = self._load_for_trip(trip.id)
-        assert loaded is not None
-        return self._to_read(loaded, trip.travel_request_id)
-
-    def mark_paid(
+    def _load_for_finance(
         self, employee: Employee, travel_request_id: str
-    ) -> SettlementRead:
-        # Finance marks payment / recovery complete
-        if employee.role != EmployeeRole.FINANCE:
-            raise AppException(
-                status_code=403,
-                sub_status_code="forbidden",
-                message="Only Finance can mark payment status",
-            )
+    ) -> tuple[TravelRequest, TravelSettlement]:
+        """Trip + settlement waiting on Finance (queued for payment or recovery)."""
         trip = self.trips.get_for_viewer(employee, travel_request_id)
+        assert_not_own_trip(employee, trip)
         settlement = self._load_for_trip(trip.id)
         if settlement is None:
-            raise AppException(
-                status_code=404,
-                sub_status_code="settlement_not_found",
-                message="No settlement for this travel request",
-            )
-        if settlement.status not in {
-            SettlementStatus.QUEUED_FOR_PAYMENT,
-            SettlementStatus.RECOVERABLE,
-        }:
+            raise not_found("settlement_not_found", "No settlement for this travel request")
+        if settlement.status not in PAYMENT_DUE_STATUSES:
             raise AppException(
                 status_code=422,
                 sub_status_code="not_ready_for_payment",
                 message="Settlement is not queued for payment or recovery",
             )
-        was_recovery = settlement.status == SettlementStatus.RECOVERABLE
-        payable = settlement.amount_payable or Decimal("0")
-        recoverable = settlement.amount_recoverable or Decimal("0")
-        settlement.status = SettlementStatus.PAID
-        trip.status = TravelRequestStatus.CLOSED
-        # Notify the requester (not Finance)
-        notify_settlement_funds_released(
-            self.db,
-            trip,
-            amount_payable=payable,
-            amount_recoverable=recoverable,
-            was_recovery=was_recovery,
-        )
+        return trip, settlement
+
+    def _commit(self, settlement: TravelSettlement, trip: TravelRequest) -> SettlementRead:
+        """Save settlement + trip (and any notifications) together, then reload for the response."""
         self.db.add(settlement)
         self.db.add(trip)
         self.db.commit()
@@ -226,56 +213,72 @@ class SettlementService:
         trip: TravelRequest,
         employee: Employee,
     ) -> None:
-        # Clear prior settlement approvals on resubmit after return
+        # Clear the prior review on resubmit after return
         settlement.approvals.clear()
         self.db.flush()
 
-        claimed = settlement.net_reimbursable
-        plan = build_request_approval_plan(
-            self.employees,
-            employee,
-            claimed,
-            trip.travel_category,
-        )
-        for level, role, approver, skipped in plan:
-            settlement.approvals.append(
-                TravelSettlementApproval(
-                    level=level,
-                    role_required=role,
-                    approver_id=None if skipped else (approver.id if approver else None),
-                    decision=(
-                        ApprovalDecision.SKIPPED
-                        if skipped
-                        else ApprovalDecision.PENDING
-                    ),
-                )
+        # Claims skip the business approval matrix: one review by the Finance Controller
+        finance = self.employees.first_by_role(EmployeeRole.FINANCE, exclude_id=employee.id)
+        if finance is None:
+            raise AppException(
+                status_code=422,
+                sub_status_code="no_finance_controller",
+                message="No Finance Controller is available to review this settlement",
             )
-
-        # Finance verification after business approvals (policy §2.1)
-        finance = self.employees.first_by_role(EmployeeRole.FINANCE)
-        next_level = (max((a.level for a in settlement.approvals), default=0)) + 1
         settlement.approvals.append(
             TravelSettlementApproval(
-                level=next_level,
+                level=1,
                 role_required=EmployeeRole.FINANCE,
-                approver_id=finance.id if finance else None,
+                approver_id=finance.id,
                 decision=ApprovalDecision.PENDING,
             )
         )
 
-        pending = [
-            a for a in settlement.approvals if a.decision == ApprovalDecision.PENDING
-        ]
-        if not pending:
-            raise AppException(
-                status_code=422,
-                sub_status_code="no_pending_approver",
-                message="Could not build a settlement approval chain",
-            )
-
-        settlement.status = SettlementStatus.IN_APPROVAL
+        settlement.status = SettlementStatus.FINANCE_REVIEW
         settlement.submitted_at = datetime.now(timezone.utc)
         trip.status = TravelRequestStatus.IN_SETTLEMENT
+
+        # Tell the Finance Controller (committed by save())
+        notify_current_approver(
+            self.db,
+            trip,
+            settlement.approvals,
+            requester=employee,
+            subject="Settlement",
+            amount=settlement.net_reimbursable,
+        )
+
+    @staticmethod
+    def _assert_unique_proofs(proof_refs: list[str | None]) -> None:
+        seen: set[str] = set()
+        for ref in proof_refs:
+            key = (ref or "").strip()
+            if not key:
+                continue
+            if key in seen:
+                label = key if is_desk_line(key) else f"Receipt #{key}"
+                raise AppException(
+                    status_code=422,
+                    sub_status_code="duplicate_proof",
+                    message=f"{label} is already used on another expense line",
+                )
+            seen.add(key)
+
+    @staticmethod
+    def _assert_within_trip(trip: TravelRequest, line: SettlementExpenseIn) -> None:
+        """Expense dates must fall inside the trip (± one travel day)."""
+        earliest = trip.start_date - timedelta(days=TRIP_DATE_BUFFER_DAYS)
+        latest = trip.end_date + timedelta(days=TRIP_DATE_BUFFER_DAYS)
+        for value in (line.check_in, line.check_out, line.expense_date):
+            if value and not (earliest <= value <= latest):
+                raise AppException(
+                    status_code=422,
+                    sub_status_code="expense_outside_trip",
+                    message=(
+                        f"Expense date {value:%d %b %Y} is outside the trip "
+                        f"({trip.start_date:%d %b} – {trip.end_date:%d %b %Y})"
+                    ),
+                )
 
     def _assert_proof_for_trip(
         self, trip: TravelRequest, proof_ref: str | None
@@ -284,7 +287,7 @@ class SettlementService:
         if proof_ref is None or not str(proof_ref).strip():
             return
         ref = str(proof_ref).strip()
-        if ref in DESK_PROOF_REFS:
+        if is_desk_line(ref):
             return
         try:
             receipt_id = int(ref)
@@ -312,46 +315,6 @@ class SettlementService:
                 ),
             )
 
-    def _recompute(
-        self,
-        settlement: TravelSettlement,
-        trip: TravelRequest,
-        *,
-        disallowed_override: Decimal | None = None,
-    ) -> None:
-        employee_paid = Decimal("0")
-        company_paid = Decimal("0")
-        for line in settlement.expenses:
-            if line.paid_by == PaidBy.EMPLOYEE:
-                employee_paid += line.amount
-            else:
-                company_paid += line.amount
-
-        disallowed = (
-            disallowed_override
-            if disallowed_override is not None
-            else settlement.disallowed_total
-        )
-        if disallowed < 0:
-            disallowed = Decimal("0")
-
-        net = employee_paid - disallowed
-        if net < 0:
-            net = Decimal("0")
-        # Full advance released — excess over net is recoverable from payroll
-        advance = trip.advance_disbursed or Decimal("0")
-        balance = net - advance
-
-        settlement.total_employee_paid = employee_paid
-        settlement.total_company_paid = company_paid
-        settlement.disallowed_total = disallowed
-        settlement.net_reimbursable = net
-        settlement.advance_applied = advance
-        settlement.amount_payable = balance if balance > 0 else Decimal("0")
-        settlement.amount_recoverable = (
-            abs(balance) if balance < 0 else Decimal("0")
-        )
-
     def _build_expense(self, line: SettlementExpenseIn) -> TravelExpense:
         if line.section == ExpenseSection.LODGING:
             expense_date = line.check_in
@@ -364,8 +327,8 @@ class SettlementService:
             paid_by=line.paid_by,
             amount=line.amount,
             proof_ref=line.proof_ref,
-            disallowed_amount=Decimal("0"),
-            disallow_reason=None,
+            disallowed_amount=line.disallowed_amount,
+            disallow_reason=line.disallow_reason,
         )
         if line.section == ExpenseSection.LODGING:
             expense.lodging = TravelExpenseLodging(
@@ -430,6 +393,8 @@ class SettlementService:
                 "mode": None,
                 "head": None,
                 "description": None,
+                "disallowed_amount": exp.disallowed_amount or ZERO,
+                "disallow_reason": exp.disallow_reason,
             }
             if exp.lodging:
                 nights = (exp.lodging.check_out - exp.lodging.check_in).days

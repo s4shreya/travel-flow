@@ -1,9 +1,11 @@
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { SelectMenu } from "@/components/ui/SelectMenu";
+import { toOptions } from "@/config/options";
 import { formatMoneyInput } from "@/lib/money";
 import {
   BORNE_BY_OPTIONS,
+  EMPLOYEE_PAID,
   type BorneBy,
   type EstimatedHead,
 } from "@/types/travelRequest";
@@ -18,13 +20,10 @@ const EMPTY_HEAD: EstimatedHead = {
   head: "",
   basis: "",
   amount: "",
-  borne_by: "Company",
+  borne_by: EMPLOYEE_PAID,
 };
 
-const BORNE_BY_SELECT_OPTIONS = BORNE_BY_OPTIONS.map((option) => ({
-  value: option,
-  label: option,
-}));
+const BORNE_BY_SELECT_OPTIONS = toOptions(BORNE_BY_OPTIONS);
 
 export function EstimatedHeadsEditor({
   value,
@@ -54,7 +53,8 @@ export function EstimatedHeadsEditor({
             </span>
           </p>
           <p className="text-xs text-slate-500">
-            Break down the estimate by head. Total is calculated automatically.
+            Break down the estimate by head. Only heads paid by the employee
+            count toward the total and the advance.
           </p>
         </div>
         <Button type="button" variant="secondary" onClick={addRow}>

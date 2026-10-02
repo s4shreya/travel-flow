@@ -1,13 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from core.deps import get_current_employee
 from database.postgres.models.employee import Employee
 from database.postgres.session import get_db
-from src.receipts.schemas import ReceiptConfirmRequest, ReceiptRead
-from src.receipts.service import ReceiptService
+from src.receipts.schemas import ReceiptConfirmRequest, ReceiptExtraction, ReceiptRead
+from src.receipts.service import MAX_RECEIPT_BYTES, ReceiptService
 from src.settlements.schemas import SettlementRead
 
 router = APIRouter(prefix="/travel-requests", tags=["receipts"])
@@ -49,7 +50,8 @@ async def upload_receipt(
     employee: Annotated[Employee, Depends(get_current_employee)],
     file: UploadFile = File(...),
 ) -> ReceiptRead:
-    data = await file.read()
+    # Read at most limit + 1 bytes so oversized uploads are rejected without buffering them
+    data = await file.read(MAX_RECEIPT_BYTES + 1)
     row, business_id = ReceiptService(db).upload(
         employee,
         travel_request_id,
@@ -65,6 +67,56 @@ async def upload_receipt(
         size_bytes=row.size_bytes,
         created_at=row.created_at,
     )
+
+
+@router.get(
+    "/{travel_request_id}/receipts/{receipt_id}/file",
+    response_class=FileResponse,
+    summary="View an uploaded receipt (inline)",
+)
+def receipt_file(
+    travel_request_id: str,
+    receipt_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    employee: Annotated[Employee, Depends(get_current_employee)],
+) -> FileResponse:
+    row, path = ReceiptService(db).get_receipt_file(employee, travel_request_id, receipt_id)
+    # Type was detected from the file signature on upload; nosniff stops browsers guessing
+    return FileResponse(
+        path,
+        media_type=row.content_type,
+        filename=row.original_name,
+        content_disposition_type="inline",
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
+
+
+@router.delete(
+    "/{travel_request_id}/receipts/{receipt_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an uploaded receipt that is not on an expense",
+)
+def delete_receipt(
+    travel_request_id: str,
+    receipt_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    employee: Annotated[Employee, Depends(get_current_employee)],
+) -> None:
+    ReceiptService(db).delete(employee, travel_request_id, receipt_id)
+
+
+@router.post(
+    "/{travel_request_id}/receipts/{receipt_id}/extract",
+    response_model=ReceiptExtraction,
+    summary="OCR a receipt, suggest the expense line and check it against policy",
+)
+def extract_receipt(
+    travel_request_id: str,
+    receipt_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    employee: Annotated[Employee, Depends(get_current_employee)],
+) -> ReceiptExtraction:
+    return ReceiptService(db).extract(employee, travel_request_id, receipt_id)
 
 
 @router.post(

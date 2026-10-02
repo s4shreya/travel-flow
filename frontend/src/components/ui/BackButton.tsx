@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 
 interface BackButtonProps {
   /** Where to go when there is no useful history entry. */
@@ -24,11 +25,9 @@ export function BackButton({
         }
         navigate(fallbackTo);
       }}
-      className="inline-flex cursor-pointer items-center gap-1.5 text-sm font-medium text-teal-800 transition hover:text-teal-950"
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
     >
-      <span aria-hidden className="text-base leading-none">
-        ←
-      </span>
+      <ArrowLeft className="h-4 w-4" aria-hidden />
       {label}
     </button>
   );

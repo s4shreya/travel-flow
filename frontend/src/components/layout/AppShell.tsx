@@ -1,82 +1,94 @@
-import type { ReactNode } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Menu, X } from "lucide-react";
 
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
-import { NotificationsDrawer } from "@/components/layout/NotificationsDrawer";
-import { PersonaSwitcher } from "@/components/layout/PersonaSwitcher";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { UserMenu } from "@/components/layout/UserMenu";
 import { BackButton } from "@/components/ui/BackButton";
 import { useEmployee } from "@/context/EmployeeContext";
+import { useNotifications } from "@/context/NotificationsContext";
+import { paths } from "@/lib/routes";
 
 interface AppShellProps {
   children: ReactNode;
 }
 
 export function AppShell({ children }: AppShellProps) {
-  const { employee, employees, setEmployeeCode, loading, error } = useEmployee();
+  const { employee, logout } = useEmployee();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const showBack = pathname !== "/";
+  const { refresh: refreshNotifications } = useNotifications();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const showBack = pathname !== paths.home;
 
-  function onPersonaSelect(code: string) {
-    setEmployeeCode(code);
-    navigate("/");
+  useEffect(() => {
+    // Pick up new notifications on every page change
+    void refreshNotifications();
+  }, [pathname, refreshNotifications]);
+
+  async function onSignOut() {
+    await logout();
+    navigate(paths.login, { replace: true });
   }
 
   return (
-    <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_top,_#e8f3f1_0%,_#f7faf9_45%,_#eef2f1_100%)] text-slate-900">
-      <header className="w-full border-b border-teal-950/40 bg-gradient-to-r from-[#04343a] via-[#0a4f56] to-[#065f5b] text-teal-50 shadow-sm">
-        <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3.5 sm:px-6 sm:py-4 lg:px-8">
-          <div className="min-w-0 justify-self-start">
-            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-100/75 sm:text-xs">
-              Nortex Industries Ltd
-            </p>
-          </div>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* Desktop sidebar */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:flex">
+        <Sidebar />
+      </aside>
 
-          <Link
-            to="/"
-            className="justify-self-center font-display text-2xl tracking-tight text-white transition hover:text-teal-100 sm:text-[1.65rem]"
-            aria-label="TravelFlow home"
-          >
-            TravelFlow
-          </Link>
-
-          <div className="flex items-center justify-end gap-2 sm:gap-3">
-            <NotificationsBell />
-            {employee ? (
-              <PersonaSwitcher
-                employee={employee}
-                employees={employees}
-                onSelect={onPersonaSelect}
-              />
-            ) : (
-              <span className="rounded-full bg-white/10 px-3 py-2 text-xs text-teal-100">
-                {loading ? "Loading…" : "No profile"}
-              </span>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {showBack ? (
-        <div className="pointer-events-none absolute inset-x-0 top-[4.75rem] z-20 sm:top-24">
-          <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
-            <div className="pointer-events-auto absolute left-4 top-0 sm:left-0 sm:-translate-x-[calc(100%+0.75rem)]">
-              <BackButton />
-            </div>
-          </div>
+      {/* Mobile sidebar drawer */}
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setMobileNavOpen(false)}
+            className="absolute inset-0 bg-slate-900/40 animate-fade"
+          />
+          <aside className="relative flex h-full w-72 max-w-[85vw] animate-in">
+            <Sidebar onNavigate={() => setMobileNavOpen(false)} />
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(false)}
+              aria-label="Close menu"
+              className="absolute right-3 top-4 rounded-md p-1.5 text-slate-500 hover:bg-slate-100"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </aside>
         </div>
       ) : null}
 
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        {error ? (
-          <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-            {error}
-          </div>
-        ) : null}
-        {children}
-      </main>
+      <div className="lg:pl-64">
+        {/* Top bar */}
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/85 px-4 backdrop-blur sm:px-6 lg:px-8">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open menu"
+            className="-ml-1 rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </button>
 
-      <NotificationsDrawer />
+          {showBack ? <BackButton /> : null}
+
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <NotificationsBell />
+            <span aria-hidden className="hidden h-6 w-px bg-slate-200 sm:block" />
+            {employee ? (
+              <UserMenu employee={employee} onSignOut={() => void onSignOut()} />
+            ) : null}
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

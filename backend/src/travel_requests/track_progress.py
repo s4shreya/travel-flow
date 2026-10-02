@@ -1,177 +1,90 @@
 """Human-readable progress labels for the track list."""
 
-from __future__ import annotations
-
 from decimal import Decimal
 
-from database.postgres.crud.employee import EmployeeCRUD
-from database.postgres.models.enums import (
-    ApprovalDecision,
-    SettlementStatus,
-    TravelRequestStatus,
-)
+from core.approval_steps import first_pending
+from database.postgres.models.enums import SettlementStatus, TravelRequestStatus
 from database.postgres.models.travel_request import TravelRequest
+from database.postgres.models.travel_settlement import TravelSettlement
+from src.settlements.totals import ZERO
+
+RETURNED_LABEL = "Settlement returned — revise and resubmit"
+FINANCE_LABEL = "Finance"
 
 
-def _pending_label(approvals, employees: EmployeeCRUD) -> str | None:
-    step = next(
-        (s for s in approvals if s.decision == ApprovalDecision.PENDING),
-        None,
-    )
+def _pending_label(approvals: list) -> str | None:
+    """Who the chain is waiting on, e.g. "Reporting Manager (Suresh)"."""
+    step = first_pending(approvals)
     if step is None:
         return None
-    role = step.role_required.value if step.role_required else "Approver"
-    if step.approver_id:
-        person = employees.get_by("id", step.approver_id)
-        if person is not None:
-            return f"{role} ({person.name})"
-    return role
+    role = step.role_required.value
+    return f"{role} ({step.approver.name})" if step.approver else role
 
 
-def build_track_progress(
-    trip: TravelRequest, employees: EmployeeCRUD
-) -> tuple[str, str | None, str | None, Decimal | None, Decimal | None]:
-    """
-    Return (progress_label, pending_with, settlement_status, payable, recoverable).
-    """
-    settlement = trip.settlement
-    settlement_status = settlement.status.value if settlement else None
-    payable = settlement.amount_payable if settlement else None
-    recoverable = settlement.amount_recoverable if settlement else None
-    pending_with: str | None = None
-
-    if trip.status == TravelRequestStatus.DRAFT:
-        return "Draft", None, settlement_status, payable, recoverable
-
-    if trip.status == TravelRequestStatus.PENDING_APPROVAL:
-        pending_with = _pending_label(trip.approvals, employees)
-        label = (
-            f"Request pending approval — {pending_with}"
-            if pending_with
-            else "Request pending approval"
-        )
-        return label, pending_with, settlement_status, payable, recoverable
-
-    if trip.status == TravelRequestStatus.APPROVED:
-        if trip.advance_requested > 0 and trip.advance_disbursed <= 0:
-            return (
-                "Approved — awaiting advance release",
-                "Finance",
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        if settlement and settlement.status == SettlementStatus.RETURNED:
-            return (
-                "Settlement returned — revise and resubmit",
-                None,
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        if trip.advance_disbursed > 0:
-            return (
-                "Approved — advance released",
-                None,
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        return "Approved", None, settlement_status, payable, recoverable
-
-    if trip.status == TravelRequestStatus.IN_SETTLEMENT and settlement is not None:
-        status = settlement.status
-        if status in {SettlementStatus.DRAFT, SettlementStatus.SUBMITTED}:
-            return (
-                "Settlement draft",
-                None,
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        if status == SettlementStatus.RETURNED:
-            return (
-                "Settlement returned — revise and resubmit",
-                None,
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        if status in {
-            SettlementStatus.IN_APPROVAL,
-            SettlementStatus.FINANCE_REVIEW,
-        }:
-            pending_with = _pending_label(settlement.approvals, employees)
-            if status == SettlementStatus.FINANCE_REVIEW:
-                label = (
-                    f"Settlement with Finance — {pending_with}"
-                    if pending_with
-                    else "Settlement with Finance"
-                )
-            else:
-                label = (
-                    f"Settlement pending approval — {pending_with}"
-                    if pending_with
-                    else "Settlement pending approval"
-                )
-            return label, pending_with, settlement_status, payable, recoverable
-        if status == SettlementStatus.QUEUED_FOR_PAYMENT:
-            amount = payable or Decimal("0")
-            return (
-                f"Settlement approved — awaiting fund release (₹{amount})",
-                "Finance",
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        if status == SettlementStatus.RECOVERABLE:
-            amount = recoverable or Decimal("0")
-            return (
-                f"Excess advance — recover in next payroll (₹{amount})",
-                "Finance",
-                settlement_status,
-                payable,
-                recoverable,
-            )
-        if status == SettlementStatus.PAID:
-            return _paid_label(payable, recoverable), None, settlement_status, payable, recoverable
-        return (
-            f"In settlement ({status.value})",
-            None,
-            settlement_status,
-            payable,
-            recoverable,
-        )
-
-    if trip.status == TravelRequestStatus.CLOSED:
-        if settlement is not None:
-            if settlement.status == SettlementStatus.PAID:
-                return (
-                    _paid_label(payable, recoverable),
-                    None,
-                    settlement_status,
-                    payable,
-                    recoverable,
-                )
-            if settlement.status == SettlementStatus.RECOVERABLE:
-                amount = recoverable or Decimal("0")
-                return (
-                    f"Closed — excess advance for payroll recovery (₹{amount})",
-                    None,
-                    settlement_status,
-                    payable,
-                    recoverable,
-                )
-        return "Closed", None, settlement_status, payable, recoverable
-
-    return trip.status.value, None, settlement_status, payable, recoverable
+def _with_pending(label: str, pending_with: str | None) -> str:
+    """Append who it is pending with, e.g. "… — Manager (Suresh)"."""
+    return f"{label} — {pending_with}" if pending_with else label
 
 
 def _paid_label(payable: Decimal | None, recoverable: Decimal | None) -> str:
-    pay = payable or Decimal("0")
-    rec = recoverable or Decimal("0")
+    pay = payable or ZERO
+    rec = recoverable or ZERO
     if rec > 0 and pay <= 0:
         return f"Closed — excess advance recovered via payroll (₹{rec})"
     if pay > 0:
         return f"Closed — settlement funds released (₹{pay})"
     return "Closed — settlement complete"
+
+
+def _approved_progress(
+    trip: TravelRequest, settlement: TravelSettlement | None
+) -> tuple[str, str | None]:
+    if trip.advance_requested > trip.advance_disbursed:
+        return "Approved — awaiting advance release", FINANCE_LABEL
+    if settlement and settlement.status == SettlementStatus.RETURNED:
+        return RETURNED_LABEL, None
+    if trip.advance_disbursed > 0:
+        return "Approved — advance released", None
+    return "Approved", None
+
+
+def _settlement_progress(settlement: TravelSettlement) -> tuple[str, str | None]:
+    status = settlement.status
+    if status == SettlementStatus.DRAFT:
+        return "Settlement draft", None
+    if status == SettlementStatus.RETURNED:
+        return RETURNED_LABEL, None
+    # Submitted claims are reviewed by the Finance Controller
+    if status == SettlementStatus.FINANCE_REVIEW:
+        pending_with = _pending_label(settlement.approvals)
+        return _with_pending("Settlement with Finance", pending_with), pending_with
+    if status == SettlementStatus.QUEUED_FOR_PAYMENT:
+        amount = settlement.amount_payable or ZERO
+        return f"Settlement approved — awaiting fund release (₹{amount})", FINANCE_LABEL
+    if status == SettlementStatus.RECOVERABLE:
+        amount = settlement.amount_recoverable or ZERO
+        return f"Excess advance — recover in next payroll (₹{amount})", FINANCE_LABEL
+    return _paid_label(settlement.amount_payable, settlement.amount_recoverable), None
+
+
+def _closed_label(settlement: TravelSettlement | None) -> str:
+    if settlement is not None and settlement.status == SettlementStatus.PAID:
+        return _paid_label(settlement.amount_payable, settlement.amount_recoverable)
+    return "Closed"
+
+
+def build_track_progress(trip: TravelRequest) -> tuple[str, str | None]:
+    """(progress_label, pending_with) for the trip's current stage."""
+    settlement = trip.settlement
+    if trip.status == TravelRequestStatus.DRAFT:
+        return "Draft", None
+    if trip.status == TravelRequestStatus.PENDING_APPROVAL:
+        pending_with = _pending_label(trip.approvals)
+        return _with_pending("Request pending approval", pending_with), pending_with
+    if trip.status == TravelRequestStatus.APPROVED:
+        return _approved_progress(trip, settlement)
+    if trip.status == TravelRequestStatus.IN_SETTLEMENT and settlement is not None:
+        return _settlement_progress(settlement)
+    if trip.status == TravelRequestStatus.CLOSED:
+        return _closed_label(settlement), None
+    return trip.status.value, None

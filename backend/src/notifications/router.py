@@ -1,29 +1,20 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from core.deps import get_current_employee
-from core.exceptions import AppException
+from core.exceptions import not_found
 from database.postgres.models.employee import Employee
 from database.postgres.models.notification import AppNotification
 from database.postgres.session import get_db
-from datetime import datetime
+from src.notifications.schemas import NotificationRead
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-
-class NotificationRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    title: str
-    body: str
-    href: str | None
-    read: bool
-    created_at: datetime
+# The bell icon shows the most recent notifications only
+NOTIFICATION_LIST_LIMIT = 50
 
 
 @router.get("", response_model=list[NotificationRead], summary="List my notifications")
@@ -35,6 +26,7 @@ def list_notifications(
         select(AppNotification)
         .where(AppNotification.employee_id == employee.id)
         .order_by(AppNotification.created_at.desc())
+        .limit(NOTIFICATION_LIST_LIMIT)
     )
     return list(db.execute(stmt).scalars().all())
 
@@ -52,13 +44,8 @@ def mark_read(
         )
     ).scalar_one_or_none()
     if row is None:
-        raise AppException(
-            status_code=404,
-            sub_status_code="notification_not_found",
-            message="Notification not found",
-        )
+        raise not_found("notification_not_found", "Notification not found")
     row.read = True
-    db.add(row)
     db.commit()
     db.refresh(row)
     return row
@@ -69,13 +56,14 @@ def mark_all_read(
     db: Annotated[Session, Depends(get_db)],
     employee: Annotated[Employee, Depends(get_current_employee)],
 ) -> list[AppNotification]:
-    stmt = select(AppNotification).where(
-        AppNotification.employee_id == employee.id,
-        AppNotification.read.is_(False),
+    # Mark every unread notification in one statement
+    db.execute(
+        update(AppNotification)
+        .where(
+            AppNotification.employee_id == employee.id,
+            AppNotification.read.is_(False),
+        )
+        .values(read=True)
     )
-    rows = list(db.execute(stmt).scalars().all())
-    for row in rows:
-        row.read = True
-        db.add(row)
     db.commit()
     return list_notifications(db, employee)

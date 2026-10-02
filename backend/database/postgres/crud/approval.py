@@ -9,6 +9,20 @@ from database.postgres.models.travel_approvals import (
 from database.postgres.models.travel_request import TravelRequest
 from database.postgres.models.travel_settlement import TravelSettlement
 
+# Request step: its trip, the whole chain and the requester
+_REQUEST_STEP_OPTIONS = (
+    selectinload(TravelRequestApproval.travel_request).selectinload(TravelRequest.approvals),
+    selectinload(TravelRequestApproval.travel_request).selectinload(TravelRequest.employee),
+)
+# Settlement step: its settlement (chain + lines) and the trip with its requester
+_SETTLEMENT_STEP_OPTIONS = (
+    selectinload(TravelSettlementApproval.settlement).selectinload(TravelSettlement.approvals),
+    selectinload(TravelSettlementApproval.settlement).selectinload(TravelSettlement.expenses),
+    selectinload(TravelSettlementApproval.settlement)
+    .selectinload(TravelSettlement.travel_request)
+    .selectinload(TravelRequest.employee),
+)
+
 
 class ApprovalCRUD:
     """Persistence helpers for travel-request and settlement approval steps."""
@@ -24,11 +38,7 @@ class ApprovalCRUD:
                 TravelRequestApproval.approver_id == approver_id,
                 TravelRequestApproval.decision == ApprovalDecision.PENDING,
             )
-            .options(
-                selectinload(TravelRequestApproval.travel_request).selectinload(
-                    TravelRequest.approvals
-                )
-            )
+            .options(*_REQUEST_STEP_OPTIONS)
             .order_by(TravelRequestApproval.created_at.asc())
         )
         return list(self.db.execute(stmt).scalars().all())
@@ -36,20 +46,14 @@ class ApprovalCRUD:
     def list_settlement_inbox_for_approver(
         self, approver_id: int
     ) -> list[TravelSettlementApproval]:
+        # Pending settlement reviews assigned to this person
         stmt = (
             select(TravelSettlementApproval)
             .where(
                 TravelSettlementApproval.approver_id == approver_id,
                 TravelSettlementApproval.decision == ApprovalDecision.PENDING,
             )
-            .options(
-                selectinload(TravelSettlementApproval.settlement).selectinload(
-                    TravelSettlement.approvals
-                ),
-                selectinload(TravelSettlementApproval.settlement).selectinload(
-                    TravelSettlement.travel_request
-                ),
-            )
+            .options(*_SETTLEMENT_STEP_OPTIONS)
             .order_by(TravelSettlementApproval.created_at.asc())
         )
         return list(self.db.execute(stmt).scalars().all())
@@ -58,11 +62,7 @@ class ApprovalCRUD:
         stmt = (
             select(TravelRequestApproval)
             .where(TravelRequestApproval.id == approval_id)
-            .options(
-                selectinload(TravelRequestApproval.travel_request).selectinload(
-                    TravelRequest.approvals
-                )
-            )
+            .options(*_REQUEST_STEP_OPTIONS)
         )
         return self.db.execute(stmt).scalar_one_or_none()
 
@@ -72,29 +72,14 @@ class ApprovalCRUD:
         stmt = (
             select(TravelSettlementApproval)
             .where(TravelSettlementApproval.id == approval_id)
-            .options(
-                selectinload(TravelSettlementApproval.settlement).selectinload(
-                    TravelSettlement.approvals
-                ),
-                selectinload(TravelSettlementApproval.settlement).selectinload(
-                    TravelSettlement.travel_request
-                ),
-                selectinload(TravelSettlementApproval.settlement).selectinload(
-                    TravelSettlement.expenses
-                ),
-            )
+            .options(*_SETTLEMENT_STEP_OPTIONS)
         )
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def save(self, approval: TravelRequestApproval) -> TravelRequestApproval:
-        self.db.add(approval)
-        self.db.commit()
-        self.db.refresh(approval)
-        return approval
-
-    def save_settlement(
-        self, approval: TravelSettlementApproval
-    ) -> TravelSettlementApproval:
+    def save(
+        self, approval: TravelRequestApproval | TravelSettlementApproval
+    ) -> TravelRequestApproval | TravelSettlementApproval:
+        # Commit the decision together with everything else in the session
         self.db.add(approval)
         self.db.commit()
         self.db.refresh(approval)

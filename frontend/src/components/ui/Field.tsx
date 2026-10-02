@@ -1,12 +1,11 @@
 import type {
   InputHTMLAttributes,
   ReactNode,
-  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
 
 const controlClass =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-teal-700/50 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-slate-50";
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-teal-700/50 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 disabled:bg-slate-50 group-data-[invalid=true]/field:border-red-400 group-data-[invalid=true]/field:focus:border-red-500 group-data-[invalid=true]/field:focus:ring-red-500/20";
 
 interface FieldProps {
   id: string;
@@ -26,7 +25,11 @@ export function Field({
   children,
 }: FieldProps) {
   return (
-    <div className="flex flex-col gap-1.5">
+    // data-invalid lets the control inside render a red border
+    <div
+      className="group/field flex flex-col gap-1.5"
+      data-invalid={error ? "true" : undefined}
+    >
       <label htmlFor={id} className="text-sm font-medium text-slate-800">
         {label}
         {required ? (
@@ -37,7 +40,11 @@ export function Field({
       </label>
       {children}
       {hint && !error ? <p className="text-xs text-slate-500">{hint}</p> : null}
-      {error ? <p className="text-xs text-red-700">{error}</p> : null}
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-xs text-red-700">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -59,12 +66,3 @@ export function TextArea({ className = "", ...props }: TextAreaProps) {
   );
 }
 
-type SelectProps = SelectHTMLAttributes<HTMLSelectElement>;
-
-export function Select({ className = "", children, ...props }: SelectProps) {
-  return (
-    <select className={`${controlClass} ${className}`} {...props}>
-      {children}
-    </select>
-  );
-}

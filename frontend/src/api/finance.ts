@@ -1,20 +1,10 @@
 import { apiFetch } from "@/api/client";
 import type { TravelRequestListItem } from "@/api/travelRequests";
 
-export function fetchAdvancesQueue(
-  employeeCode: string,
-): Promise<TravelRequestListItem[]> {
-  return apiFetch<TravelRequestListItem[]>("/api/finance/advances", {
-    method: "GET",
-    employeeCode,
-  });
+export function fetchAdvancesQueue(): Promise<TravelRequestListItem[]> {
+  return apiFetch<TravelRequestListItem[]>("/api/finance/advances");
 }
 
-export function fetchSettlementPaymentsQueue(
-  employeeCode: string,
-): Promise<TravelRequestListItem[]> {
-  return apiFetch<TravelRequestListItem[]>(
-    "/api/finance/settlement-payments",
-    { method: "GET", employeeCode },
-  );
+export function fetchSettlementPaymentsQueue(): Promise<TravelRequestListItem[]> {
+  return apiFetch<TravelRequestListItem[]>("/api/finance/settlement-payments");
 }

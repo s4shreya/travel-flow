@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider + its hook live together */
 import {
   createContext,
   useCallback,
@@ -8,70 +9,74 @@ import {
   type ReactNode,
 } from "react";
 
-import { fetchEmployees, fetchMe } from "@/api/me";
-import { DEFAULT_EMPLOYEE_CODE } from "@/config/env";
+import { login as apiLogin, logout as apiLogout } from "@/api/auth";
+import { refreshSession, setAccessToken, UNAUTHORIZED_EVENT } from "@/api/client";
 import type { Capability } from "@/types/auth";
-import type { EmployeeSummary } from "@/types/me";
+import type { EmployeeSummary, MeResponse } from "@/types/me";
 
 interface EmployeeContextValue {
-  employeeCode: string;
+  /** Signed-in employee (null when signed out). */
   employee: EmployeeSummary | null;
-  employees: EmployeeSummary[];
   capabilities: Capability[];
   loading: boolean;
-  error: string | null;
-  setEmployeeCode: (code: string) => void;
   can: (capability: Capability) => boolean;
-  refresh: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const EmployeeContext = createContext<EmployeeContextValue | null>(null);
 
 export function EmployeeProvider({ children }: { children: ReactNode }) {
-  const [employeeCode, setEmployeeCode] = useState(DEFAULT_EMPLOYEE_CODE);
   const [employee, setEmployee] = useState<EmployeeSummary | null>(null);
-  const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [me, directory] = await Promise.all([
-        fetchMe(employeeCode),
-        fetchEmployees(employeeCode),
-      ]);
-      setEmployee(me.employee);
-      setCapabilities(me.capabilities);
-      setEmployees(directory);
-    } catch (err) {
-      setEmployee(null);
-      setCapabilities([]);
-      setError(err instanceof Error ? err.message : "Failed to load profile");
-    } finally {
-      setLoading(false);
-    }
-  }, [employeeCode]);
+  const applySession = useCallback((me: MeResponse | null) => {
+    setEmployee(me?.employee ?? null);
+    setCapabilities(me?.capabilities ?? []);
+  }, []);
 
+  // Restore the session after a reload: memory is empty, so use the refresh cookie
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshSession()
+      .then(applySession)
+      .finally(() => setLoading(false));
+  }, [applySession]);
+
+  // Drop the session when any API call reports it expired
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setAccessToken(null);
+      applySession(null);
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, [applySession]);
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      applySession(await apiLogin(email, password));
+    },
+    [applySession],
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await apiLogout();
+    } finally {
+      applySession(null);
+    }
+  }, [applySession]);
+
+  // Stable between renders so effects can depend on it
+  const can = useCallback(
+    (capability: Capability) => capabilities.includes(capability),
+    [capabilities],
+  );
 
   const value = useMemo(
-    () => ({
-      employeeCode,
-      employee,
-      employees,
-      capabilities,
-      loading,
-      error,
-      setEmployeeCode,
-      can: (capability: Capability) => capabilities.includes(capability),
-      refresh,
-    }),
-    [employeeCode, employee, employees, capabilities, loading, error, refresh]
+    () => ({ employee, capabilities, loading, can, login, logout }),
+    [employee, capabilities, loading, can, login, logout],
   );
 
   return (

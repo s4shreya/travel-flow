@@ -41,7 +41,5 @@ def decide_approval(
         Employee, Depends(require_capability(Capability.APPROVE_REQUESTS))
     ],
 ) -> ApprovalStepRead:
-    row = ApprovalService(db).decide(
-        employee, approval_id, payload, kind=payload.kind
-    )
+    row = ApprovalService(db).decide(employee, approval_id, payload)
     return ApprovalStepRead.model_validate(row)
